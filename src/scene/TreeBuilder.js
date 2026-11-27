@@ -2,67 +2,104 @@
  * 3D 碎钻粒子圣诞树主体 + 隐形深度遮挡核 + 细闪流光螺旋金带 + 璀璨星芒层
  * --------------------------------------------------
  * 核心设计：
- * 1. 平滑圆润松枝波浪：使用连续正弦波塑造 8 层自然松枝起伏与明暗阴影，无生硬阶梯断层；
+ * 1. 经典 6 层饱满伞裙锯齿轮廓：每层从上一层下摆内侧顺滑凹弧外张，并在底边收出尖锐垂坠的松枝叶尖，
+ *    既保持原版璀璨充盈的碎钻密度与通透质感（绝不内部发黑、绝不实体化），又呈现清晰的树叶层叠突出感；
  * 2. 五色独立宝石颗粒：深紫暗影、紫粉主钻、暖香槟金钻、银白珍珠钻、冷调蓝紫星屑颗颗分明；
- * 3. 纯圆滑圆锥螺旋金带 + 隐形树芯遮挡锥（colorWrite: false）：
- *    金带沿纯平滑螺旋线盘旋，绝不凸起、绝不断裂；隐形遮挡锥挡住绕到树背面的丝带，同时保留树身通透星隙！
+ * 3. 纯圆滑圆锥螺旋金带 + 收窄隐形树芯遮挡锥（colorWrite: false）：
+ *    金带紧贴饱满伞裙外缘顺滑盘旋，叶尖轻盈探出丝带边缘；隐形遮挡锥挡住树背面丝带同时保留层次；
  * 4. GPU 粒子雾霾爆发 + 两阶段环绕汇聚动画：全黑聚光爆开成漫天粒子雾霾，随后先自上而下凝聚成流光金带，
  *    剩余粒子继续大尺度环绕旋涡向心聚拢塑成璀璨碎钻圣诞树。
  */
 
 import * as THREE from 'three';
 
-const TREE_HEIGHT = 10.5;
-const TREE_BASE_Y = -4.35;
-const TREE_BASE_RADIUS = 3.85;
+const TREE_HEIGHT = 10.35;
+const TREE_BASE_Y = -4.18;
+const TREE_BASE_RADIUS = 3.62;
+const TIER_COUNT = 6;
+const FROND_COUNTS = [9, 9, 8, 8, 7, 6];
+
+function createSeededRandom(seed = 20261225) {
+  let s = seed % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+function getOuterEnvelope(t) {
+  const tc = THREE.MathUtils.clamp(t, 0, 1);
+  return Math.pow(1.0 - tc, 0.96) * TREE_BASE_RADIUS + 0.04;
+}
 
 /**
- * 连续平滑的层叠松枝轮廓函数（无 floor 阶梯跳变）
- * 返回：当前位置松枝最大半径 radius、基础圆锥包络 globalCone、以及层内受光系数 tierShade
+ * 连续 6 层凹弧伞裙 + 尖锐锯齿垂边轮廓函数
  */
-function getSmoothTreeProfile(t, angle) {
-  const globalCone = Math.pow(1.0 - t, 0.91) * TREE_BASE_RADIUS + 0.06;
+function getTreeProfile(t, angle) {
+  const tc = THREE.MathUtils.clamp(t, 0, 1);
+  const tierPos = tc * TIER_COUNT;
+  const tierIdx = Math.min(TIER_COUNT - 1, Math.floor(tierPos));
+  const u = tierPos - tierIdx;
 
-  // 7.5 层平滑松枝起伏（波峰对应松枝外舒下沿，波谷对应层间内收凹槽）
-  const wavePhase = t * Math.PI * 2.0 * 7.5;
-  const tierWave = Math.sin(wavePhase);
-  const skirtFactor = 0.89 + 0.105 * tierWave * (1.0 - t * 0.28);
+  const flare = Math.pow(1.0 - u, 1.48);
+  const frondCount = FROND_COUNTS[tierIdx];
+  const tierPhase = tierIdx * 1.18;
 
-  // 环向柔和分叉（幅度克制，确保不会刺穿外侧螺旋金带）
-  const frondCount = 7.0;
-  const frondWave = 1.0 + 0.055 * Math.cos(angle * frondCount + t * 14.0) * (1.0 - t * 0.35);
+  const rawWave = 0.5 + 0.5 * Math.cos(angle * frondCount + tierPhase);
+  const leafPoint = Math.pow(rawWave, 1.75);
+  const subWave = 0.5 + 0.5 * Math.cos(angle * (frondCount * 2) - tierPhase * 1.3 + 0.7);
+  const subLeaf = Math.pow(subWave, 2.2) * 0.22;
 
-  // 波峰处（松枝外翻下沿）明亮，波谷处（上一层树枝下方阴影）深邃压暗
-  const tierShade = 0.72 + 0.36 * (0.5 + 0.5 * tierWave);
+  let radiusFactor;
+  if (tierIdx === TIER_COUNT - 1) {
+    const capFlare = Math.pow(1.0 - u, 1.25);
+    radiusFactor = 0.76 + 0.26 * capFlare + capFlare * (0.20 * leafPoint + 0.05 * subLeaf);
+  } else {
+    const baseSkirt = 0.60 + 0.34 * flare;
+    const tipScale = tierIdx === 0 ? 0.80 : 1.0;
+    const tipProtrusion = flare * tipScale * (0.19 * leafPoint + 0.045 * subLeaf);
+    radiusFactor = baseSkirt + tipProtrusion;
+  }
+
+  const tierDroopMult = tierIdx === 0 ? 0.68 : 1.0;
+  const droopScale = 0.44 * (1.0 - tc * 0.62) * tierDroopMult;
+  const yDroop = flare * droopScale * (0.28 + 0.72 * leafPoint);
+
+  const underShadow = THREE.MathUtils.smoothstep(u, 0.70, 1.0);
+  const tierShade = 0.90 + 0.20 * flare + 0.08 * leafPoint * flare - 0.24 * underShadow;
 
   return {
-    radius: globalCone * skirtFactor * frondWave,
-    globalCone,
-    tierShade
+    radius: getOuterEnvelope(tc) * radiusFactor,
+    yDroop,
+    tierShade,
+    tierIdx,
+    u,
+    leafPoint
   };
 }
 
 /**
  * 为开场“粒子雾霾”生成多层次 3D 星尘散落云区坐标
  */
-function createHazeCloudPosition() {
-  const band = Math.random();
+function createHazeCloudPosition(rng = Math.random) {
+  const band = rng();
   let r;
   let y;
   if (band < 0.45) {
     // 45% 庭院中近景浓密微雾星云
-    r = 4.2 + Math.random() * 7.3;
-    y = -3.0 + Math.random() * 12.2;
+    r = 4.2 + rng() * 7.3;
+    y = -3.0 + rng() * 12.2;
   } else if (band < 0.8) {
     // 35% 环绕雪谷的宽广银河雾霾带
-    r = 11.5 + Math.random() * 8.0;
-    y = -2.4 + Math.random() * 14.4;
+    r = 11.5 + rng() * 8.0;
+    y = -2.4 + rng() * 14.4;
   } else {
     // 20% 高空璀璨星云顶幕
-    r = 2.5 + Math.random() * 11.5;
-    y = 5.2 + Math.random() * 8.6;
+    r = 2.5 + rng() * 11.5;
+    y = 5.2 + rng() * 8.6;
   }
-  const angle = Math.random() * Math.PI * 2;
+  const angle = rng() * Math.PI * 2;
   return [Math.cos(angle) * r, y, Math.sin(angle) * r];
 }
 
@@ -188,7 +225,8 @@ const TREE_VERTEX_SHADER = /* glsl */ `
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     float beatSize = aRole > 0.5 ? (1.0 + uBeat * (aRole > 1.5 ? 0.14 : 0.06)) : 1.0;
-    gl_PointSize = aSize * beatSize * mix(0.68, 1.0, convEase) * uPixelRatio * (92.0 / max(-mvPosition.z, 1.0));
+    float rawSize = aSize * beatSize * mix(0.68, 1.0, convEase) * uPixelRatio * (92.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = min(rawSize, 13.5 * uPixelRatio);
   }
 `;
 
@@ -256,7 +294,8 @@ const SPARKLE_VERTEX_SHADER = /* glsl */ `
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * (0.76 + 0.38 * wave) * (1.0 + uBeat * 0.26) * mix(1.35, 1.0, convEase) * uPixelRatio * (150.0 / max(-mvPosition.z, 1.0));
+    float rawSize = aSize * (0.76 + 0.38 * wave) * (1.0 + uBeat * 0.26) * mix(1.35, 1.0, convEase) * uPixelRatio * (150.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = min(rawSize, 24.0 * uPixelRatio);
   }
 `;
 
@@ -341,12 +380,14 @@ const RIBBON_FRAGMENT_SHADER = /* glsl */ `
 export class TreeBuilder {
   constructor(colors, isMobile = false) {
     this.group = new THREE.Group();
-    this.particleCount = isMobile ? 14000 : 19000;
-    this.sparkleCount = isMobile ? 1300 : 1900;
+    this.particleCount = isMobile ? 15500 : 21500;
+    this.sparkleCount = isMobile ? 1400 : 2000;
     this.ribbonCount = isMobile ? 5200 : 7600;
     this.ribbonEnabled = true;
 
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    this.rng = createSeededRandom(20261225);
+
+    const pr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
 
     this.treeUniforms = {
       uTime: { value: 0 },
@@ -385,7 +426,7 @@ export class TreeBuilder {
     this.treeMesh = this._buildTreeParticles();
     this.treeMesh.renderOrder = 1;
 
-    // 隐形树芯深度遮挡锥：不画任何颜色（保留树身星隙通透感），只写入深度缓冲挡住树背面的螺旋丝带！
+    // 隐形树芯深度遮挡锥：严格缩在 0.60 颈部以内，干净遮挡背面金带同时保留前层伞裙充盈感
     this.depthCone = this._buildDepthOccluderCone();
     this.depthCone.renderOrder = 2;
 
@@ -402,18 +443,19 @@ export class TreeBuilder {
   }
 
   _buildDepthOccluderCone() {
-    const geo = new THREE.ConeGeometry(TREE_BASE_RADIUS * 0.86, TREE_HEIGHT * 0.98, 40, 1, false);
+    const geo = new THREE.ConeGeometry(TREE_BASE_RADIUS * 0.58, TREE_HEIGHT * 0.95, 40, 1, false);
     const mat = new THREE.MeshBasicMaterial({
       colorWrite: false,
       depthWrite: true,
       depthTest: true
     });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.y = TREE_BASE_Y + TREE_HEIGHT * 0.49;
+    mesh.position.y = TREE_BASE_Y + TREE_HEIGHT * 0.475;
     return mesh;
   }
 
   _buildTreeParticles() {
+    const rng = this.rng;
     const count = this.particleCount;
     const positions = new Float32Array(count * 3);
     const hazePositions = new Float32Array(count * 3);
@@ -424,54 +466,123 @@ export class TreeBuilder {
     const roles = new Float32Array(count);
     const shades = new Float32Array(count);
 
+    // 各层边缘加强采样权重（按周长/面积分布，底层略多、顶层略少）
+    const tierWeights = [];
+    let totalTierWeight = 0;
+    for (let k = 0; k < TIER_COUNT; k += 1) {
+      const w = getOuterEnvelope((k + 0.12) / TIER_COUNT);
+      totalTierWeight += w;
+      tierWeights.push(totalTierWeight);
+    }
+    const pickWeightedTier = () => {
+      const target = rng() * totalTierWeight;
+      for (let k = 0; k < TIER_COUNT; k += 1) {
+        if (target <= tierWeights[k]) return k;
+      }
+      return TIER_COUNT - 1;
+    };
+
+    const pickBrightGem = (i, baseSizeMin = 0.45, baseSizeSpan = 0.56) => {
+      const p = rng();
+      if (p < 0.42) {
+        roles[i] = 1.0;
+        sizes[i] = baseSizeMin + rng() * baseSizeSpan;
+      } else if (p < 0.67) {
+        roles[i] = 2.0;
+        sizes[i] = baseSizeMin + 0.03 + rng() * (baseSizeSpan + 0.04);
+      } else if (p < 0.88) {
+        roles[i] = 3.0;
+        sizes[i] = baseSizeMin - 0.02 + rng() * baseSizeSpan;
+      } else {
+        roles[i] = 4.0;
+        sizes[i] = baseSizeMin + rng() * (baseSizeSpan - 0.04);
+      }
+    };
+
+    const shellEnd = Math.floor(count * 0.70);
+    const edgeEnd = Math.floor(count * 0.86);
+
     for (let i = 0; i < count; i += 1) {
-      const u = Math.random();
-      const t = 1.0 - Math.pow(u, 0.57);
-      const angle = Math.random() * Math.PI * 2;
-      const { radius: maxR, tierShade } = getSmoothTreeProfile(t, angle);
+      let x = 0;
+      let y = TREE_BASE_Y;
+      let z = 0;
 
-      const isOuter = Math.random() < 0.7;
-      const rFactor = isOuter
-        ? 0.76 + 0.24 * Math.pow(Math.random(), 0.48)
-        : 0.22 + 0.54 * Math.random();
+      if (i < shellEnd) {
+        // 1. 70% 饱满外层伞裙碎钻壳（连续无空洞，充盈感十足）
+        const t = 1.0 - Math.pow(rng(), 0.58);
+        const angle = rng() * Math.PI * 2;
+        const profile = getTreeProfile(t, angle);
+        const rFactor = 0.78 + 0.22 * Math.pow(rng(), 0.42);
+        const r = profile.radius * rFactor;
 
-      const r = maxR * rFactor;
-      const y = TREE_BASE_Y + t * TREE_HEIGHT + (Math.random() - 0.5) * 0.12;
+        x = Math.cos(angle) * r;
+        y = TREE_BASE_Y + t * TREE_HEIGHT - profile.yDroop + (rng() - 0.5) * 0.08;
+        z = Math.sin(angle) * r;
 
-      positions[i * 3] = Math.cos(angle) * r;
+        if (profile.u > 0.78) {
+          shades[i] = THREE.MathUtils.clamp(profile.tierShade * (0.86 + 0.16 * rFactor), 0.56, 0.88);
+          roles[i] = rng() < 0.32 ? 0.0 : 1.0;
+          sizes[i] = 0.42 + rng() * 0.48;
+        } else {
+          shades[i] = THREE.MathUtils.clamp(profile.tierShade * (0.86 + 0.20 * rFactor), 0.74, 1.18);
+          pickBrightGem(i, 0.45, 0.56);
+        }
+      } else if (i < edgeEnd) {
+        // 2. 16% 锯齿边缘叶尖强化层（聚焦各层下摆尖角与叶缘弧线，勾勒清晰锯齿剪影）
+        const tierIdx = pickWeightedTier();
+        const u = Math.pow(rng(), 2.3) * 0.34;
+        const t = (tierIdx + u) / TIER_COUNT;
+        const frondCount = FROND_COUNTS[tierIdx];
+        const tierPhase = tierIdx * 1.18;
+        const peakIdx = Math.floor(rng() * frondCount);
+        const peakAngle = (2 * Math.PI * peakIdx - tierPhase) / frondCount;
+        const delta = (rng() + rng() - 1.0) * (Math.PI / frondCount) * 0.65;
+        const angle = peakAngle + delta;
+
+        const profile = getTreeProfile(t, angle);
+        const rFactor = 0.92 + 0.08 * rng();
+        const r = profile.radius * rFactor;
+
+        x = Math.cos(angle) * r;
+        y = TREE_BASE_Y + t * TREE_HEIGHT - profile.yDroop + (rng() - 0.5) * 0.05;
+        z = Math.sin(angle) * r;
+
+        shades[i] = 0.96 + rng() * 0.22;
+        const p = rng();
+        if (p < 0.38) roles[i] = 1.0;
+        else if (p < 0.66) roles[i] = 2.0;
+        else if (p < 0.90) roles[i] = 3.0;
+        else roles[i] = 4.0;
+        sizes[i] = 0.42 + rng() * 0.48;
+      } else {
+        // 3. 14% 柔和充盈内芯层（主色为主、绝不发黑，托起整体丰满感）
+        const t = 1.0 - Math.pow(rng(), 0.60);
+        const angle = rng() * Math.PI * 2;
+        const profile = getTreeProfile(t, angle);
+        const rFactor = 0.26 + 0.52 * Math.pow(rng(), 0.70);
+        const r = profile.radius * rFactor;
+
+        x = Math.cos(angle) * r;
+        y = TREE_BASE_Y + t * TREE_HEIGHT - profile.yDroop * 0.65 + (rng() - 0.5) * 0.1;
+        z = Math.sin(angle) * r;
+
+        shades[i] = THREE.MathUtils.clamp(0.48 + 0.30 * rFactor, 0.46, 0.78);
+        roles[i] = rng() < 0.35 ? 0.0 : 1.0;
+        sizes[i] = 0.42 + rng() * 0.46;
+      }
+
+      positions[i * 3] = x;
       positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = Math.sin(angle) * r;
+      positions[i * 3 + 2] = z;
 
-      const [hx, hy, hz] = createHazeCloudPosition();
+      const [hx, hy, hz] = createHazeCloudPosition(rng);
       hazePositions[i * 3] = hx;
       hazePositions[i * 3 + 1] = hy;
       hazePositions[i * 3 + 2] = hz;
 
-      heights[i] = t;
-      delays[i] = Math.random() * 0.3;
-
-      const shellLight = isOuter ? 0.8 + 0.28 * rFactor : 0.32 + 0.35 * rFactor;
-      shades[i] = Math.max(0.2, tierShade * shellLight);
-
-      const pick = Math.random();
-      if (!isOuter || tierShade < 0.82) {
-        roles[i] = pick < 0.65 ? 0.0 : 1.0;
-        sizes[i] = 0.42 + Math.random() * 0.45;
-      } else if (pick < 0.42) {
-        roles[i] = 1.0;
-        sizes[i] = 0.44 + Math.random() * 0.56;
-      } else if (pick < 0.66) {
-        roles[i] = 2.0;
-        sizes[i] = 0.48 + Math.random() * 0.62;
-      } else if (pick < 0.86) {
-        roles[i] = 3.0;
-        sizes[i] = 0.42 + Math.random() * 0.54;
-      } else {
-        roles[i] = 4.0;
-        sizes[i] = 0.44 + Math.random() * 0.52;
-      }
-
-      phases[i] = Math.random() * Math.PI * 2;
+      heights[i] = THREE.MathUtils.clamp((y - TREE_BASE_Y) / TREE_HEIGHT, 0, 1);
+      delays[i] = rng() * 0.3;
+      phases[i] = rng() * Math.PI * 2;
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -497,6 +608,7 @@ export class TreeBuilder {
   }
 
   _buildSparkleParticles() {
+    const rng = this.rng;
     const count = this.sparkleCount;
     const positions = new Float32Array(count * 3);
     const hazePositions = new Float32Array(count * 3);
@@ -506,29 +618,55 @@ export class TreeBuilder {
     const phases = new Float32Array(count);
     const goldMixes = new Float32Array(count);
 
+    const surfaceSplit = Math.floor(count * 0.65);
+
     for (let i = 0; i < count; i += 1) {
-      const t = 1.0 - Math.pow(Math.random(), 0.6);
-      const angle = Math.random() * Math.PI * 2;
-      const { radius: maxR } = getSmoothTreeProfile(t, angle);
-      const r = maxR * (0.96 + Math.random() * 0.07) + 0.05;
-      const y = TREE_BASE_Y + t * TREE_HEIGHT + (Math.random() - 0.5) * 0.1;
+      let x = 0;
+      let y = TREE_BASE_Y;
+      let z = 0;
 
-      positions[i * 3] = Math.cos(angle) * r;
+      if (i < surfaceSplit) {
+        // 65% 星芒贴合 6 层伞裙外表面
+        const t = 1.0 - Math.pow(rng(), 0.6);
+        const angle = rng() * Math.PI * 2;
+        const profile = getTreeProfile(t, angle);
+        const r = profile.radius * (0.97 + rng() * 0.05) + 0.02;
+        x = Math.cos(angle) * r;
+        y = TREE_BASE_Y + t * TREE_HEIGHT - profile.yDroop + (rng() - 0.5) * 0.08;
+        z = Math.sin(angle) * r;
+      } else {
+        // 35% 星芒点缀每层锯齿下摆叶尖
+        const tierIdx = Math.floor(rng() * TIER_COUNT);
+        const u = Math.pow(rng(), 2.0) * 0.22;
+        const t = (tierIdx + u) / TIER_COUNT;
+        const frondCount = FROND_COUNTS[tierIdx];
+        const tierPhase = tierIdx * 1.18;
+        const peakIdx = Math.floor(rng() * frondCount);
+        const peakAngle = (2 * Math.PI * peakIdx - tierPhase) / frondCount;
+        const angle = peakAngle + (rng() - 0.5) * (Math.PI / frondCount) * 0.45;
+        const profile = getTreeProfile(t, angle);
+        const r = profile.radius * (0.97 + rng() * 0.05) + 0.02;
+        x = Math.cos(angle) * r;
+        y = TREE_BASE_Y + t * TREE_HEIGHT - profile.yDroop + (rng() - 0.5) * 0.05;
+        z = Math.sin(angle) * r;
+      }
+
+      positions[i * 3] = x;
       positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = Math.sin(angle) * r;
+      positions[i * 3 + 2] = z;
 
-      const [hx, hy, hz] = createHazeCloudPosition();
+      const [hx, hy, hz] = createHazeCloudPosition(rng);
       hazePositions[i * 3] = hx;
       hazePositions[i * 3 + 1] = hy;
       hazePositions[i * 3 + 2] = hz;
 
-      heights[i] = t;
-      delays[i] = Math.random() * 0.3;
+      heights[i] = THREE.MathUtils.clamp((y - TREE_BASE_Y) / TREE_HEIGHT, 0, 1);
+      delays[i] = rng() * 0.3;
 
-      const isHeroStar = Math.random() < 0.07;
-      sizes[i] = isHeroStar ? 2.0 + Math.random() * 1.05 : 0.95 + Math.random() * 1.0;
-      phases[i] = Math.random() * Math.PI * 2;
-      goldMixes[i] = Math.random() < 0.48 ? 0.85 : 0.1;
+      const isHeroStar = rng() < 0.07;
+      sizes[i] = isHeroStar ? 1.95 + rng() * 1.0 : 0.92 + rng() * 0.92;
+      phases[i] = rng() * Math.PI * 2;
+      goldMixes[i] = rng() < 0.48 ? 0.85 : 0.1;
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -554,6 +692,7 @@ export class TreeBuilder {
   }
 
   _buildRibbonParticles() {
+    const rng = this.rng;
     const count = this.ribbonCount;
     const positions = new Float32Array(count * 3);
     const hazePositions = new Float32Array(count * 3);
@@ -562,41 +701,38 @@ export class TreeBuilder {
     const heights = new Float32Array(count);
     const centers = new Float32Array(count);
 
-    // 4.6 圈纯圆滑圆锥螺旋线：无任何阶梯函数、无分叉扰动，线条 100% 顺滑优雅！
+    // 4.6 圈纯圆滑圆锥螺旋线：紧密贴合 6 层饱满伞裙外缘，让锯齿叶尖轻盈探出丝带边缘
     const turns = 4.6;
 
     for (let i = 0; i < count; i += 1) {
-      // 按弧长近似采样（底部周长更长分配更多星尘，确保从底到顶密度均匀不断裂）
-      const u = Math.random();
-      const t = 0.04 + (1.0 - Math.pow(u, 0.68)) * 0.92;
+      const u = rng();
+      const t = 0.055 + (1.0 - Math.pow(u, 0.68)) * 0.91;
 
       const baseAngle = t * Math.PI * 2.0 * turns;
-      const angle = baseAngle + (Math.random() - 0.5) * 0.07;
+      const angle = baseAngle + (rng() - 0.5) * 0.07;
 
-      // 丝带横截面呈柔和星尘带分布：中轴密集闪亮，边缘轻柔弥散
-      const spread = (Math.random() + Math.random() + Math.random()) / 1.5 - 1.0;
+      const spread = (rng() + rng() + rng()) / 1.5 - 1.0;
       const halfWidth = 0.22 - 0.1 * t;
       const bandOffset = spread * halfWidth;
 
-      // 纯平滑圆锥包络半径（略大于树枝最外端 1.045，正面全程连贯不被截断，绝无突然凸起！）
-      const smoothCone = Math.pow(1.0 - t, 0.91) * TREE_BASE_RADIUS + 0.06;
-      const radialScatter = (Math.random() - 0.5) * 0.09;
-      const r = smoothCone * 1.06 + 0.05 + radialScatter;
+      const smoothCone = getOuterEnvelope(t);
+      const radialScatter = (rng() - 0.5) * 0.09;
+      const r = smoothCone * 1.02 + 0.05 + radialScatter;
       const y = TREE_BASE_Y + t * TREE_HEIGHT + bandOffset;
 
       positions[i * 3] = Math.cos(angle) * r;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
 
-      const [hx, hy, hz] = createHazeCloudPosition();
+      const [hx, hy, hz] = createHazeCloudPosition(rng);
       hazePositions[i * 3] = hx;
       hazePositions[i * 3 + 1] = hy;
       hazePositions[i * 3 + 2] = hz;
 
       const centerFactor = Math.max(0, 1.0 - Math.abs(spread));
       centers[i] = centerFactor;
-      sizes[i] = 0.34 + centerFactor * 0.42 + Math.random() * 0.32;
-      phases[i] = Math.random() * Math.PI * 2;
+      sizes[i] = 0.34 + centerFactor * 0.42 + rng() * 0.32;
+      phases[i] = rng() * Math.PI * 2;
       heights[i] = t;
     }
 

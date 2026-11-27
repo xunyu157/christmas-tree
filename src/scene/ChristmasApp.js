@@ -23,6 +23,7 @@ import { GroundVortex } from './GroundVortex.js';
 import { FireworksSystem } from './FireworksSystem.js';
 import { AtmosphereSystem } from './AtmosphereSystem.js';
 import { WinterVillage } from './WinterVillage.js';
+import { GiftBoxes } from './GiftBoxes.js';
 import { IntroEffectSystem } from './IntroEffectSystem.js';
 import { MusicBoxPlayer } from '../audio/MusicBoxPlayer.js';
 
@@ -72,6 +73,12 @@ export class ChristmasApp {
     this.frontFillLight = new THREE.DirectionalLight('#8faad4', 0.45);
     this.frontFillLight.position.set(8, 10, 18);
     this.scene.add(this.frontFillLight);
+
+    this.baseTreeLightIntensity = 6.0;
+    this.treeLightFactor = 1.0;
+    this.treeBaseLight = new THREE.PointLight('#ffe3ad', this.baseTreeLightIntensity, 10.8, 1.6);
+    this.treeBaseLight.position.set(0, -2.1, 0);
+    this.scene.add(this.treeBaseLight);
 
     this.nightFog = new THREE.Fog(initialConfig.colors.skyBottom, 42, 126);
     this.scene.fog = initialConfig.effects.winterVillage ? this.nightFog : null;
@@ -145,6 +152,9 @@ export class ChristmasApp {
 
     this.village = new WinterVillage(initialConfig.colors, dotTexture);
     this.scene.add(this.village.group);
+
+    this.gifts = new GiftBoxes(initialConfig.colors);
+    this.scene.add(this.gifts.group);
 
     this.introEffects = new IntroEffectSystem(
       initialConfig.colors,
@@ -246,9 +256,13 @@ export class ChristmasApp {
       this.hemiLight.intensity = 0;
       this.moonLight.intensity = 0;
       this.frontFillLight.intensity = 0;
+      this.treeLightFactor = 0;
+      this.treeBaseLight.intensity = 0;
       this.atmosphere.setReveal(0, 0);
       this.village.setVisible(false);
       this.village.setReveal(0);
+      this.gifts.setVisible(false);
+      this.gifts.setReveal(0);
       this.scene.fog = null;
       this.scene.background = this.blackBg;
       return;
@@ -263,9 +277,13 @@ export class ChristmasApp {
       this.hemiLight.intensity = 0.58;
       this.moonLight.intensity = 0.85;
       this.frontFillLight.intensity = 0.45;
+      this.treeLightFactor = 1;
+      this.treeBaseLight.intensity = this.baseTreeLightIntensity;
       this.atmosphere.setReveal(1, 1);
       this.village.setVisible(showVillage);
       this.village.setReveal(1);
+      this.gifts.setVisible(true);
+      this.gifts.setReveal(1);
       this._updateSkyBackground(this.config.colors.skyTop, this.config.colors.skyBottom, 1);
       this.scene.fog = showVillage ? this.nightFog : null;
       return;
@@ -288,6 +306,8 @@ export class ChristmasApp {
     this.hemiLight.intensity = 0.58 * lightEase;
     this.moonLight.intensity = 0.85 * lightEase;
     this.frontFillLight.intensity = 0.45 * lightEase;
+    this.treeLightFactor = lightEase;
+    this.treeBaseLight.intensity = this.baseTreeLightIntensity * lightEase;
 
     this._updateSkyBackground(this.config.colors.skyTop, this.config.colors.skyBottom, skyP);
     this.scene.fog = showVillage ? this.nightFog : null;
@@ -302,6 +322,14 @@ export class ChristmasApp {
       cloudP,
       cottageP,
       lampP,
+      groundP
+    });
+
+    this.gifts.setVisible(true);
+    this.gifts.setReveal({
+      active: true,
+      cascadeY,
+      edgeGlow,
       groundP
     });
   }
@@ -420,6 +448,7 @@ export class ChristmasApp {
       this.topper.setPixelRatio(this.pixelRatio);
       this.vortex.setPixelRatio(this.pixelRatio);
       this.atmosphere.setPixelRatio(this.pixelRatio);
+      this.gifts.setPixelRatio(this.pixelRatio);
       this.introEffects.setPixelRatio(this.pixelRatio);
     };
 
@@ -495,6 +524,11 @@ export class ChristmasApp {
     this.atmosphere.setSnowVisible(config.effects.snow);
 
     this.village.setColors(config.colors);
+    this.gifts.setColors(config.colors);
+    this.treeBaseLight.color
+      .set('#ffe3ad')
+      .lerp(new THREE.Color(config.colors.ribbonColor), 0.30)
+      .lerp(new THREE.Color(config.colors.treePrimary), 0.10);
     this.introEffects.setColors(config.colors);
     this._applyWorldReveal(this.introState === 'lit' ? 1 : this.worldReveal);
 
@@ -718,6 +752,12 @@ export class ChristmasApp {
     this.fireworks.update(delta);
     this.atmosphere.update(elapsed, delta);
     this.village.update(elapsed, delta);
+    this.gifts.setBeat(beat);
+    this.gifts.update(elapsed);
+    if (this.worldReveal > 0.001) {
+      this.treeBaseLight.intensity =
+        this.baseTreeLightIntensity * this.treeLightFactor * (1 + beat * 0.16);
+    }
 
     this.renderOnce();
   }

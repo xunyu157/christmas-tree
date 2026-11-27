@@ -11,17 +11,17 @@
 
 import * as THREE from 'three';
 
-const TREE_HEIGHT = 10.5;
-const TREE_BASE_Y = -4.35;
-const TREE_BASE_RADIUS = 3.85;
+const TREE_HEIGHT = 10.35;
+const TREE_BASE_Y = -4.18;
+const TREE_BASE_RADIUS = 3.62;
 const RIBBON_TURNS = 4.6;
 const SEED_CENTER_Y = 2.2;
 
 function getRibbonPoint(tHeight, outVec) {
   const t = THREE.MathUtils.clamp(tHeight, 0, 1);
   const angle = t * Math.PI * 2.0 * RIBBON_TURNS;
-  const smoothCone = Math.pow(1.0 - t, 0.91) * TREE_BASE_RADIUS + 0.06;
-  const r = smoothCone * 1.06 + 0.05;
+  const smoothCone = Math.pow(1.0 - t, 0.96) * TREE_BASE_RADIUS + 0.04;
+  const r = smoothCone * 1.02 + 0.05;
   const y = TREE_BASE_Y + t * TREE_HEIGHT;
   outVec.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
   return outVec;
@@ -29,7 +29,7 @@ function getRibbonPoint(tHeight, outVec) {
 
 function getTreeBodyPoint(tHeight, angle, radialFactor, outVec) {
   const t = THREE.MathUtils.clamp(tHeight, 0.02, 0.98);
-  const smoothCone = Math.pow(1.0 - t, 0.91) * TREE_BASE_RADIUS + 0.06;
+  const smoothCone = Math.pow(1.0 - t, 0.96) * TREE_BASE_RADIUS + 0.04;
   const r = smoothCone * radialFactor;
   const y = TREE_BASE_Y + t * TREE_HEIGHT;
   outVec.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
