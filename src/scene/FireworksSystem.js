@@ -142,6 +142,7 @@ export class FireworksSystem {
   constructor(dotTexture, themeTint) {
     this.group = new THREE.Group();
     this.enabled = true;
+    this.autoPaused = false;
     this.themeTint = themeTint;
     this.bursts = [];
     this.nextAutoTimer = 0.55; // 打开页面半秒内就放第一朵烟花，第一时间带来惊喜！
@@ -152,6 +153,19 @@ export class FireworksSystem {
       this.bursts.push(burst);
       this.group.add(burst.points);
     }
+  }
+
+  setAutoPaused(paused) {
+    this.autoPaused = Boolean(paused);
+    if (!this.autoPaused) {
+      this.nextAutoTimer = 1.4;
+    }
+  }
+
+  launchCelebrationSalvo() {
+    if (!this.enabled) return;
+    this.launchAt(-4.6, 2.7, -4.8);
+    this.launchAt(4.7, 3.4, -5.2);
   }
 
   setEnabled(enabled) {
@@ -188,10 +202,12 @@ export class FireworksSystem {
   update(delta) {
     if (!this.enabled) return;
 
-    this.nextAutoTimer -= delta;
-    if (this.nextAutoTimer <= 0) {
-      this._launchAuto();
-      this.nextAutoTimer = 1.9 + Math.random() * 1.5;
+    if (!this.autoPaused) {
+      this.nextAutoTimer -= delta;
+      if (this.nextAutoTimer <= 0) {
+        this._launchAuto();
+        this.nextAutoTimer = 1.9 + Math.random() * 1.5;
+      }
     }
 
     for (let i = 0; i < this.bursts.length; i += 1) {

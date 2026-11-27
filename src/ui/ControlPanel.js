@@ -90,6 +90,12 @@ export class ControlPanel {
       btnModalCopy: document.getElementById('btn-modal-copy'),
       btnModalPreviewGift: document.getElementById('btn-modal-preview-gift'),
 
+      introOverlay: document.getElementById('intro-overlay'),
+      igniteIcon: document.getElementById('ignite-icon'),
+      introKicker: document.getElementById('intro-kicker'),
+      btnIgnite: document.getElementById('btn-ignite'),
+      btnReplayIntro: document.getElementById('btn-replay-intro'),
+
       toast: document.getElementById('toast')
     };
   }
@@ -242,7 +248,26 @@ export class ControlPanel {
     this.el.btnModalPreviewGift.addEventListener('click', () => {
       this._closeQrModal();
       this.setGiftMode(true);
-      this.showToast('🎁 正在以朋友视角预览纯净礼物模式');
+      this.enterIntroMode();
+      this.showToast('🎁 正在以朋友视角预览开箱礼物模式');
+    });
+
+    // 开场点亮仪式：点击覆盖层任意处、按钮或按空格/回车均可触发
+    const handleIgnite = (e) => {
+      e.stopPropagation();
+      this.triggerIgnite();
+    };
+    this.el.introOverlay.addEventListener('click', handleIgnite);
+    this.el.btnIgnite.addEventListener('click', handleIgnite);
+    this.el.introOverlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.triggerIgnite();
+      }
+    });
+
+    this.el.btnReplayIntro.addEventListener('click', () => {
+      this.enterIntroMode();
     });
   }
 
@@ -280,6 +305,11 @@ export class ControlPanel {
     this.el.greetingOverlay.className = `font-${greeting.fontStyle}`;
     document.documentElement.style.setProperty('--text-main', greeting.textColor);
     document.documentElement.style.setProperty('--text-sub', greeting.subTextColor);
+
+    // 同步开场仪式图标与引导语
+    const activeTopper = TOPPER_OPTIONS.find((o) => o.id === topper);
+    this.el.igniteIcon.textContent = activeTopper ? activeTopper.icon : '💖';
+    this._updateIntroKicker();
 
     // 同步预设高亮
     this.el.presetGrid.querySelectorAll('.preset-card').forEach((card) => {
@@ -322,11 +352,53 @@ export class ControlPanel {
     this.el.subTextColor.value = greeting.subTextColor;
   }
 
+  _updateIntroKicker() {
+    if (!this.el.introKicker) return;
+    if (this.isGiftMode) {
+      const senderText = this.config.greeting.sender.trim();
+      this.el.introKicker.textContent = senderText
+        ? `${senderText} 送你一棵专属圣诞树`
+        : '收到一份专属圣诞惊喜 ✨';
+    } else {
+      this.el.introKicker.textContent = '夜空星尘已为你就绪 ✨';
+    }
+  }
+
+  enterIntroMode() {
+    clearTimeout(this.introHideTimer);
+    this.closeDrawer();
+    document.body.classList.add('intro-pending', 'greeting-hidden');
+    this.el.introOverlay.hidden = false;
+    this.el.introOverlay.classList.remove('ignited');
+    this._updateIntroKicker();
+    this.app.resetIntro();
+  }
+
+  triggerIgnite() {
+    if (this.el.introOverlay.hidden || this.el.introOverlay.classList.contains('ignited')) {
+      return;
+    }
+    this.el.introOverlay.classList.add('ignited');
+    this.introHideTimer = setTimeout(() => {
+      this.el.introOverlay.hidden = true;
+    }, 620);
+
+    this.app.ignite({
+      onGreetingReveal: () => {
+        document.body.classList.remove('greeting-hidden');
+      },
+      onComplete: () => {
+        document.body.classList.remove('intro-pending');
+      }
+    });
+  }
+
   setGiftMode(isGift) {
     this.isGiftMode = isGift;
     document.body.classList.toggle('gift-mode', isGift);
     this.el.floatingActions.hidden = isGift;
     this.el.giftActions.hidden = !isGift;
+    this._updateIntroKicker();
     if (isGift) {
       this.closeDrawer();
     }

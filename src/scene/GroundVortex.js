@@ -39,6 +39,7 @@ const VORTEX_VERTEX_SHADER = /* glsl */ `
 const VORTEX_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uVortexColor;
   uniform vec3 uGoldColor;
+  uniform float uReveal;
 
   varying float vGold;
   varying float vTwinkle;
@@ -52,7 +53,7 @@ const VORTEX_FRAGMENT_SHADER = /* glsl */ `
     float alpha = pow(smoothstep(0.5, 0.05, dist), 2.1);
     vec3 base = mix(uVortexColor, vec3(0.92, 0.96, 1.0), 0.38);
     vec3 color = mix(base, uGoldColor, vGold);
-    gl_FragColor = vec4(color * vTwinkle * 0.85, alpha * (0.14 + 0.24 * vEdgeFade));
+    gl_FragColor = vec4(color * vTwinkle * 0.85, alpha * (0.14 + 0.24 * vEdgeFade) * uReveal);
   }
 `;
 
@@ -62,6 +63,8 @@ export class GroundVortex {
     this.group.position.set(0, VORTEX_Y, 0);
 
     this.particleCount = isMobile ? 7600 : 11200;
+    this.baseMistOpacity = 0.3;
+    this.reveal = 1.0;
 
     // 1. 底部柔和径向雾光圆盘（烘托梦幻漂浮感）
     const mistGeo = new THREE.PlaneGeometry(15.2, 15.2);
@@ -69,7 +72,7 @@ export class GroundVortex {
       map: mistTexture,
       color: new THREE.Color(colors.vortexColor),
       transparent: true,
-      opacity: 0.3,
+      opacity: this.baseMistOpacity,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
@@ -82,6 +85,7 @@ export class GroundVortex {
     this.uniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      uReveal: { value: 1.0 },
       uVortexColor: { value: new THREE.Color(colors.vortexColor) },
       uGoldColor: { value: new THREE.Color(colors.ribbonColor) }
     };
@@ -164,6 +168,19 @@ export class GroundVortex {
     this.mistMat.color.set(colors.vortexColor);
     this.uniforms.uVortexColor.value.set(colors.vortexColor);
     this.uniforms.uGoldColor.value.set(colors.ribbonColor);
+  }
+
+  /**
+   * 设置底部星河漩涡向外荡漾展开的揭示进度 [0, 1]
+   */
+  setReveal(progress) {
+    const p = Math.min(1, Math.max(0, progress));
+    this.reveal = p;
+    const ease = 1 - Math.pow(1 - p, 3);
+    this.uniforms.uReveal.value = ease;
+    this.mistMat.opacity = this.baseMistOpacity * ease;
+    const xz = 0.16 + 0.84 * ease;
+    this.group.scale.set(xz, 1, xz);
   }
 
   setVisible(visible) {

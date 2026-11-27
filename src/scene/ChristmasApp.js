@@ -24,10 +24,17 @@ import { FireworksSystem } from './FireworksSystem.js';
 import { AtmosphereSystem } from './AtmosphereSystem.js';
 
 export class ChristmasApp {
-  constructor(container, initialConfig) {
+  constructor(container, initialConfig, options = {}) {
     this.container = container;
     this.config = initialConfig;
     this.isMobile = window.innerWidth < 768;
+    this.startWithIntro = options.startWithIntro !== false;
+
+    this.introState = this.startWithIntro ? 'idle' : 'lit';
+    this.introElapsed = 0;
+    this.introDuration = 2.55;
+    this.introFlags = { greetingShown: false, salvo1: false, salvo2: false };
+    this.introCallbacks = { onGreetingReveal: null, onComplete: null };
 
     this.scene = new THREE.Scene();
 
@@ -127,6 +134,9 @@ export class ChristmasApp {
 
     this._bindEvents();
     this.applyConfig(initialConfig);
+    if (this.startWithIntro) {
+      this._applyIntroProgress(0);
+    }
     this._animate();
   }
 
@@ -192,8 +202,12 @@ export class ChristmasApp {
       const dy = e.clientY - this.pointerDownPos.y;
       this.pointerDownPos = null;
 
-      // 仅在短按点击（而非拖拽旋转视角）时于夜空绽放一朵烟花
-      if (Math.hypot(dx, dy) < 7 && this.config.effects.fireworks) {
+      // 仅在短按点击（而非拖拽旋转视角）且已点亮圣诞树时于夜空绽放一朵烟花
+      if (
+        Math.hypot(dx, dy) < 7 &&
+        this.config.effects.fireworks &&
+        this.introState === 'lit'
+      ) {
         const rect = this.renderer.domElement.getBoundingClientRect();
         const ndc = new THREE.Vector2(
           ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -236,12 +250,71 @@ export class ChristmasApp {
 
     this.fireworks.setEnabled(config.effects.fireworks);
     this.fireworks.setThemeTint(config.colors.topperColor);
+    this.fireworks.setAutoPaused(this.introState !== 'lit');
 
     this.atmosphere.setStarsVisible(config.effects.stars);
     this.atmosphere.setSnowVisible(config.effects.snow);
 
     this.controls.autoRotate = config.effects.autoRotate;
     this.bloomPass.strength = config.effects.bloom ? config.effects.bloomStrength : 0;
+  }
+
+  /**
+   * 触发开场“点亮圣诞树”仪式动画
+   */
+  ignite(callbacks = {}) {
+    if (this.introState !== 'idle') return;
+    this.introState = 'igniting';
+    this.introElapsed = 0;
+    this.introFlags = { greetingShown: false, salvo1: false, salvo2: false };
+    this.introCallbacks = callbacks;
+    this.controls.autoRotateSpeed = 1.15;
+  }
+
+  /**
+   * 重置为开场未点亮星云状态（用于重播仪式或预览礼物开箱）
+   */
+  resetIntro() {
+    this.introState = 'idle';
+    this.introElapsed = 0;
+    this.introFlags = { greetingShown: false, salvo1: false, salvo2: false };
+    this.controls.autoRotateSpeed = 0.55;
+    this._applyIntroProgress(0);
+  }
+
+  _applyIntroProgress(elapsed) {
+    const treeAssemble = Math.min(1, elapsed / 2.15);
+    this.tree.setAssemble(treeAssemble);
+
+    const vortexP = Math.min(1, Math.max(0, (elapsed - 0.18) / 1.75));
+    this.vortex.setReveal(vortexP);
+
+    const topperP = Math.min(1, Math.max(0, (elapsed - 1.45) / 0.85));
+    this.topper.setReveal(topperP);
+
+    if (elapsed >= 1.55 && !this.introFlags.greetingShown) {
+      this.introFlags.greetingShown = true;
+      this.introCallbacks.onGreetingReveal?.();
+    }
+
+    if (elapsed >= 1.65 && !this.introFlags.salvo1) {
+      this.introFlags.salvo1 = true;
+      this.fireworks.launchCelebrationSalvo();
+    }
+
+    if (elapsed >= 2.18 && !this.introFlags.salvo2) {
+      this.introFlags.salvo2 = true;
+      if (this.config.effects.fireworks) {
+        this.fireworks.launchAt(-0.4 + (Math.random() - 0.5) * 3.0, 5.2, -5.8);
+      }
+    }
+
+    if (elapsed >= this.introDuration && this.introState === 'igniting') {
+      this.introState = 'lit';
+      this.controls.autoRotateSpeed = 0.55;
+      this.fireworks.setAutoPaused(false);
+      this.introCallbacks.onComplete?.();
+    }
   }
 
   /**
@@ -264,6 +337,11 @@ export class ChristmasApp {
 
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const elapsed = this.clock.elapsedTime;
+
+    if (this.introState === 'igniting') {
+      this.introElapsed += delta;
+      this._applyIntroProgress(this.introElapsed);
+    }
 
     this.controls.update();
     this.tree.update(elapsed);

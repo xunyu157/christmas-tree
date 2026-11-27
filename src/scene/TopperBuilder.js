@@ -207,6 +207,7 @@ export class TopperBuilder {
   constructor(topperType, topperColor, sparkleTexture) {
     this.group = new THREE.Group();
     this.group.position.set(0, TOPPER_Y, 0);
+    this.reveal = 1.0;
 
     this.uniforms = {
       uTime: { value: 0 },
@@ -279,6 +280,27 @@ export class TopperBuilder {
     this.uniforms.uPixelRatio.value = ratio;
   }
 
+  /**
+   * 设置开场树顶弹出揭示进度 [0, 1]（带弹性回弹与点亮瞬间星芒爆发）
+   */
+  setReveal(progress) {
+    const t = Math.min(1, Math.max(0, progress));
+    this.reveal = t;
+    if (t <= 0.001) {
+      this.group.visible = false;
+      return;
+    }
+    this.group.visible = true;
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    const s = 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    this.group.scale.setScalar(Math.max(0.001, s));
+
+    const fade = Math.min(1, t * 1.4);
+    this.flareMat.opacity = 0.76 * fade;
+    this.haloMat.opacity = 0.28 * fade;
+  }
+
   update(elapsed, camera = null) {
     this.uniforms.uTime.value = elapsed;
 
@@ -287,9 +309,10 @@ export class TopperBuilder {
     const camYaw = camera ? Math.atan2(camera.position.x, camera.position.z) : 0;
     this.pointsMesh.rotation.y = camYaw + Math.sin(elapsed * 1.1) * 0.2;
 
-    // 核心星芒呼吸脉动
+    // 核心星芒呼吸脉动 + 点亮瞬间星芒爆发
     const pulse = 1.0 + 0.09 * Math.sin(elapsed * 3.1);
-    this.coreFlare.scale.set(1.55 * pulse, 1.55 * pulse, 1);
-    this.haloSprite.scale.set(2.35 * pulse, 2.35 * pulse, 1);
+    const burst = 1.0 + 0.55 * Math.sin(this.reveal * Math.PI) * (this.reveal < 0.999 ? 1 : 0);
+    this.coreFlare.scale.set(1.55 * pulse * burst, 1.55 * pulse * burst, 1);
+    this.haloSprite.scale.set(2.35 * pulse * burst, 2.35 * pulse * burst, 1);
   }
 }

@@ -25,6 +25,22 @@
       <!-- 3D WebGL 圣诞树全屏画布 -->
       <div id="canvas-container" aria-label="3D 发光粒子圣诞树"></div>
 
+      <!-- 开场仪式：点击点亮圣诞树 -->
+      <div id="intro-overlay" class="intro-overlay" role="button" tabindex="0" aria-label="点击点亮圣诞树">
+        <div class="intro-center">
+          <div class="ignite-orb" aria-hidden="true">
+            <span class="ignite-ring ring-1"></span>
+            <span class="ignite-ring ring-2"></span>
+            <span id="ignite-icon" class="ignite-icon">💖</span>
+          </div>
+          <p id="intro-kicker" class="intro-kicker">夜空星尘已为你就绪</p>
+          <button id="btn-ignite" class="ignite-btn" type="button">
+            <span>✨ 点亮圣诞树</span>
+          </button>
+          <p class="intro-subhint">轻点屏幕任意位置开启圣诞惊喜</p>
+        </div>
+      </div>
+
       <!-- 树顶上方浪漫双行祝福文字 -->
       <header id="greeting-overlay" class="font-calligraphy" aria-live="polite">
         <h1 id="greeting-main">亲爱的你，天天开心</h1>
@@ -205,6 +221,12 @@
                 value="0.32"
                 class="range-slider"
               />
+            </div>
+
+            <div class="section-block">
+              <button id="btn-replay-intro" class="action-btn secondary" type="button">
+                ✨ 重播「点亮圣诞树」开场动画
+              </button>
             </div>
           </section>
 

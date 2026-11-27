@@ -14,7 +14,7 @@ import { ControlPanel } from './ui/ControlPanel.js';
 const container = document.getElementById('canvas-container');
 const { config, isGiftMode } = readConfigFromLocation();
 
-const app = new ChristmasApp(container, config);
+const app = new ChristmasApp(container, config, { startWithIntro: true });
 
 const panel = new ControlPanel(
   config,
@@ -25,6 +25,8 @@ const panel = new ControlPanel(
   app
 );
 
+panel.enterIntroMode();
+
 // 桌面端首次进入创作模式时默认保持画面纯净，方便先欣赏整棵树；
 // 若想直接编辑，点击右上角「✨ 定制圣诞树」即可滑出抽屉。
 window.addEventListener('hashchange', () => {
@@ -33,4 +35,7 @@ window.addEventListener('hashchange', () => {
   app.applyConfig(config);
   panel.syncUI();
   panel.setGiftMode(next.isGiftMode);
+  if (next.isGiftMode) {
+    panel.enterIntroMode();
+  }
 });

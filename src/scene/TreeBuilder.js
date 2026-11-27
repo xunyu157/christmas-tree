@@ -6,6 +6,7 @@
  * 2. 五色独立宝石颗粒：深紫暗影、紫粉主钻、暖香槟金钻、银白珍珠钻、冷调蓝紫星屑颗颗分明；
  * 3. 纯圆滑圆锥螺旋金带 + 隐形树芯遮挡锥（colorWrite: false）：
  *    金带沿纯平滑螺旋线盘旋，绝不凸起、绝不断裂；隐形遮挡锥挡住绕到树背面的丝带，同时保留树身通透星隙！
+ * 4. GPU 开场点亮汇聚动画：未点亮时粒子化作星云漂浮于夜空，点击点亮后自下而上旋涡聚合形成圣诞树。
  */
 
 import * as THREE from 'three';
@@ -40,18 +41,56 @@ function getSmoothTreeProfile(t, angle) {
   };
 }
 
+/**
+ * 为开场“星云散开 -> 聚拢成树”动画生成宇宙星云散落位置
+ */
+function createScatterPosition() {
+  const radius = 7.5 + Math.random() * 14.5;
+  const angle = Math.random() * Math.PI * 2;
+  const y = -6.0 + Math.random() * 18.5;
+  return [Math.cos(angle) * radius, y, Math.sin(angle) * radius];
+}
+
+const SWIRL_CONVERGE_GLSL = /* glsl */ `
+  float p = clamp((uAssemble - aDelay) / max(1.0 - aDelay, 0.001), 0.0, 1.0);
+  float ease = 1.0 - pow(1.0 - p, 3.0);
+  float swirl = (1.0 - ease) * 3.6;
+  float cs = cos(swirl);
+  float sn = sin(swirl);
+  float idleAngle = uTime * 0.14 * (1.0 - ease);
+  float ci = cos(idleAngle);
+  float si = sin(idleAngle);
+  vec3 idleScatter = vec3(
+    aScatter.x * ci - aScatter.z * si,
+    aScatter.y + sin(uTime * 0.65 + aPhase) * 0.35 * (1.0 - ease),
+    aScatter.x * si + aScatter.z * ci
+  );
+  vec3 blended = mix(idleScatter, position, ease);
+  vec3 pos = vec3(
+    blended.x * cs - blended.z * sn,
+    blended.y,
+    blended.x * sn + blended.z * cs
+  );
+  float flash = exp(-pow((p - 0.88) * 6.5, 2.0)) * 0.35 * step(0.01, uAssemble) * step(uAssemble, 0.999);
+  vReveal = mix(0.28, 1.0, ease) + flash;
+`;
+
 const TREE_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
   attribute float aPhase;
   attribute float aRole;
   attribute float aShade;
+  attribute vec3 aScatter;
+  attribute float aDelay;
 
   uniform float uTime;
   uniform float uPixelRatio;
+  uniform float uAssemble;
 
   varying float vRole;
   varying float vShade;
   varying float vTwinkle;
+  varying float vReveal;
 
   void main() {
     vRole = aRole;
@@ -61,8 +100,8 @@ const TREE_VERTEX_SHADER = /* glsl */ `
     float wave = 0.5 + 0.5 * sin(uTime * speed + aPhase);
     vTwinkle = aRole > 1.5 ? mix(0.68, 1.24, pow(wave, 1.6)) : mix(0.75, 1.08, wave);
 
-    vec3 pos = position;
-    pos.y += sin(uTime * 0.85 + aPhase) * 0.014;
+    ${SWIRL_CONVERGE_GLSL}
+    pos.y += sin(uTime * 0.85 + aPhase) * 0.014 * ease;
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
@@ -79,6 +118,7 @@ const TREE_FRAGMENT_SHADER = /* glsl */ `
   varying float vRole;
   varying float vShade;
   varying float vTwinkle;
+  varying float vReveal;
 
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
@@ -100,7 +140,7 @@ const TREE_FRAGMENT_SHADER = /* glsl */ `
       baseColor = mix(uColorPrimary, vec3(0.56, 0.68, 0.98), 0.58);
     }
 
-    vec3 litColor = baseColor * (0.42 + 0.68 * rim) * vShade * vTwinkle;
+    vec3 litColor = baseColor * (0.42 + 0.68 * rim) * vShade * vTwinkle * vReveal;
     gl_FragColor = vec4(litColor, 1.0);
   }
 `;
@@ -109,19 +149,25 @@ const SPARKLE_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
   attribute float aPhase;
   attribute float aGoldMix;
+  attribute vec3 aScatter;
+  attribute float aDelay;
 
   uniform float uTime;
   uniform float uPixelRatio;
+  uniform float uAssemble;
 
   varying float vFlash;
   varying float vGoldMix;
+  varying float vReveal;
 
   void main() {
     vGoldMix = aGoldMix;
     float wave = 0.5 + 0.5 * sin(uTime * 3.4 + aPhase);
     vFlash = mix(0.22, 1.32, pow(wave, 2.4));
 
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    ${SWIRL_CONVERGE_GLSL}
+
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     gl_PointSize = aSize * (0.76 + 0.38 * wave) * uPixelRatio * (150.0 / max(-mvPosition.z, 1.0));
   }
@@ -132,6 +178,7 @@ const SPARKLE_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uRibbonColor;
   varying float vFlash;
   varying float vGoldMix;
+  varying float vReveal;
 
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
@@ -145,7 +192,7 @@ const SPARKLE_FRAGMENT_SHADER = /* glsl */ `
 
     vec3 tint = mix(uColorSecondary, uRibbonColor, vGoldMix);
     vec3 color = mix(tint, vec3(1.0, 0.99, 1.0), 0.45);
-    gl_FragColor = vec4(color * vFlash, alpha * 0.68);
+    gl_FragColor = vec4(color * vFlash * vReveal, alpha * 0.68);
   }
 `;
 
@@ -154,12 +201,16 @@ const RIBBON_VERTEX_SHADER = /* glsl */ `
   attribute float aPhase;
   attribute float aHeight;
   attribute float aCenter;
+  attribute vec3 aScatter;
+  attribute float aDelay;
 
   uniform float uTime;
   uniform float uPixelRatio;
+  uniform float uAssemble;
 
   varying float vGlow;
   varying float vCenter;
+  varying float vReveal;
 
   void main() {
     vCenter = aCenter;
@@ -167,7 +218,9 @@ const RIBBON_VERTEX_SHADER = /* glsl */ `
     float twinkle = 0.72 + 0.34 * sin(uTime * 3.8 + aPhase);
     vGlow = mix(0.8, 1.24, flow) * twinkle;
 
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    ${SWIRL_CONVERGE_GLSL}
+
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     gl_PointSize = aSize * (0.9 + 0.18 * flow) * uPixelRatio * (90.0 / max(-mvPosition.z, 1.0));
   }
@@ -177,6 +230,7 @@ const RIBBON_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uRibbonColor;
   varying float vGlow;
   varying float vCenter;
+  varying float vReveal;
 
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
@@ -186,8 +240,8 @@ const RIBBON_FRAGMENT_SHADER = /* glsl */ `
     // 柔羽化星尘颗粒：中心璀璨香槟金、两侧如细碎金粉般自然散开，告别生硬黄绳感
     float soft = pow(smoothstep(0.5, 0.04, dist), 1.85);
     vec3 goldCore = mix(uRibbonColor, vec3(1.0, 0.98, 0.88), vCenter * 0.55);
-    float alpha = soft * (0.34 + 0.54 * vCenter);
-    gl_FragColor = vec4(goldCore * vGlow, alpha);
+    float alpha = soft * (0.34 + 0.54 * vCenter) * mix(0.35, 1.0, min(vReveal, 1.0));
+    gl_FragColor = vec4(goldCore * vGlow * vReveal, alpha);
   }
 `;
 
@@ -203,6 +257,7 @@ export class TreeBuilder {
     this.treeUniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
+      uAssemble: { value: 1.0 },
       uColorPrimary: { value: new THREE.Color(colors.treePrimary) },
       uColorSecondary: { value: new THREE.Color(colors.treeSecondary) },
       uColorDeep: { value: new THREE.Color(colors.treeDeep) },
@@ -212,6 +267,7 @@ export class TreeBuilder {
     this.sparkleUniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
+      uAssemble: { value: 1.0 },
       uColorSecondary: { value: new THREE.Color(colors.treeSecondary) },
       uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
     };
@@ -219,6 +275,7 @@ export class TreeBuilder {
     this.ribbonUniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
+      uAssemble: { value: 1.0 },
       uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
     };
 
@@ -256,6 +313,8 @@ export class TreeBuilder {
   _buildTreeParticles() {
     const count = this.particleCount;
     const positions = new Float32Array(count * 3);
+    const scatters = new Float32Array(count * 3);
+    const delays = new Float32Array(count);
     const sizes = new Float32Array(count);
     const phases = new Float32Array(count);
     const roles = new Float32Array(count);
@@ -278,6 +337,12 @@ export class TreeBuilder {
       positions[i * 3] = Math.cos(angle) * r;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
+
+      const [sx, sy, sz] = createScatterPosition();
+      scatters[i * 3] = sx;
+      scatters[i * 3 + 1] = sy;
+      scatters[i * 3 + 2] = sz;
+      delays[i] = Math.min(0.38, t * 0.28 + Math.random() * 0.08);
 
       const shellLight = isOuter ? 0.8 + 0.28 * rFactor : 0.32 + 0.35 * rFactor;
       shades[i] = Math.max(0.2, tierShade * shellLight);
@@ -305,6 +370,8 @@ export class TreeBuilder {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('aScatter', new THREE.BufferAttribute(scatters, 3));
+    geometry.setAttribute('aDelay', new THREE.BufferAttribute(delays, 1));
     geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
     geometry.setAttribute('aRole', new THREE.BufferAttribute(roles, 1));
@@ -325,6 +392,8 @@ export class TreeBuilder {
   _buildSparkleParticles() {
     const count = this.sparkleCount;
     const positions = new Float32Array(count * 3);
+    const scatters = new Float32Array(count * 3);
+    const delays = new Float32Array(count);
     const sizes = new Float32Array(count);
     const phases = new Float32Array(count);
     const goldMixes = new Float32Array(count);
@@ -340,6 +409,12 @@ export class TreeBuilder {
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
 
+      const [sx, sy, sz] = createScatterPosition();
+      scatters[i * 3] = sx;
+      scatters[i * 3 + 1] = sy;
+      scatters[i * 3 + 2] = sz;
+      delays[i] = Math.min(0.38, t * 0.28 + Math.random() * 0.08);
+
       const isHeroStar = Math.random() < 0.07;
       sizes[i] = isHeroStar ? 2.0 + Math.random() * 1.05 : 0.95 + Math.random() * 1.0;
       phases[i] = Math.random() * Math.PI * 2;
@@ -348,6 +423,8 @@ export class TreeBuilder {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('aScatter', new THREE.BufferAttribute(scatters, 3));
+    geometry.setAttribute('aDelay', new THREE.BufferAttribute(delays, 1));
     geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
     geometry.setAttribute('aGoldMix', new THREE.BufferAttribute(goldMixes, 1));
@@ -368,6 +445,8 @@ export class TreeBuilder {
   _buildRibbonParticles() {
     const count = this.ribbonCount;
     const positions = new Float32Array(count * 3);
+    const scatters = new Float32Array(count * 3);
+    const delays = new Float32Array(count);
     const sizes = new Float32Array(count);
     const phases = new Float32Array(count);
     const heights = new Float32Array(count);
@@ -399,6 +478,12 @@ export class TreeBuilder {
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
 
+      const [sx, sy, sz] = createScatterPosition();
+      scatters[i * 3] = sx;
+      scatters[i * 3 + 1] = sy;
+      scatters[i * 3 + 2] = sz;
+      delays[i] = Math.min(0.38, t * 0.28 + Math.random() * 0.08);
+
       const centerFactor = Math.max(0, 1.0 - Math.abs(spread));
       centers[i] = centerFactor;
       sizes[i] = 0.34 + centerFactor * 0.42 + Math.random() * 0.32;
@@ -408,6 +493,8 @@ export class TreeBuilder {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('aScatter', new THREE.BufferAttribute(scatters, 3));
+    geometry.setAttribute('aDelay', new THREE.BufferAttribute(delays, 1));
     geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
     geometry.setAttribute('aHeight', new THREE.BufferAttribute(heights, 1));
@@ -424,6 +511,18 @@ export class TreeBuilder {
     });
 
     return new THREE.Points(geometry, material);
+  }
+
+  /**
+   * 设置开场汇聚进度 [0, 1]：0 为散落星空星云，1 为完整圣诞树
+   */
+  setAssemble(value) {
+    const v = Math.min(1, Math.max(0, value));
+    this.treeUniforms.uAssemble.value = v;
+    this.sparkleUniforms.uAssemble.value = v;
+    this.ribbonUniforms.uAssemble.value = v;
+    // 星云散开期间关闭树芯隐形遮挡锥，避免裁切星云粒子；聚合后开启以遮挡背面丝带
+    this.depthCone.visible = v >= 0.72;
   }
 
   setColors(colors) {
