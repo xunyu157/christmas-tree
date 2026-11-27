@@ -301,7 +301,7 @@ export class TopperBuilder {
     this.haloMat.opacity = 0.28 * fade;
   }
 
-  update(elapsed, camera = null) {
+  update(elapsed, camera = null, beat = 0) {
     this.uniforms.uTime.value = elapsed;
 
     // 树顶装饰优雅轻盈漂浮；始终正面朝向相机并带轻微摇曳，避免镜头转到侧面时爱心变成竖条椭圆！
@@ -309,10 +309,11 @@ export class TopperBuilder {
     const camYaw = camera ? Math.atan2(camera.position.x, camera.position.z) : 0;
     this.pointsMesh.rotation.y = camYaw + Math.sin(elapsed * 1.1) * 0.2;
 
-    // 核心星芒呼吸脉动 + 点亮瞬间星芒爆发
+    // 核心星芒呼吸脉动 + 点亮瞬间星芒爆发 + 随八音盒节拍轻轻律动
     const pulse = 1.0 + 0.09 * Math.sin(elapsed * 3.1);
     const burst = 1.0 + 0.55 * Math.sin(this.reveal * Math.PI) * (this.reveal < 0.999 ? 1 : 0);
-    this.coreFlare.scale.set(1.55 * pulse * burst, 1.55 * pulse * burst, 1);
-    this.haloSprite.scale.set(2.35 * pulse * burst, 2.35 * pulse * burst, 1);
+    const beatBoost = 1.0 + beat * 0.22;
+    this.coreFlare.scale.set(1.55 * pulse * burst * beatBoost, 1.55 * pulse * burst * beatBoost, 1);
+    this.haloSprite.scale.set(2.35 * pulse * burst * beatBoost, 2.35 * pulse * burst * beatBoost, 1);
   }
 }

@@ -6,11 +6,18 @@
  * 朋友打开这个链接时，网页自动解码还原出你的专属圣诞树！
  */
 
-import { PRESETS, TOPPER_OPTIONS, FONT_OPTIONS, createDefaultConfig } from '../config/presets.js';
+import {
+  PRESETS,
+  TOPPER_OPTIONS,
+  FONT_OPTIONS,
+  MUSIC_OPTIONS,
+  createDefaultConfig
+} from '../config/presets.js';
 
 const VALID_HEX = /^#[0-9a-fA-F]{6}$/;
 const VALID_TOPPERS = new Set(TOPPER_OPTIONS.map((o) => o.id));
 const VALID_FONTS = new Set(FONT_OPTIONS.map((o) => o.id));
+const VALID_TRACKS = new Set(MUSIC_OPTIONS.map((o) => o.id));
 
 function bytesToBase64Url(bytes) {
   let binary = '';
@@ -75,7 +82,10 @@ export function encodeConfig(config) {
       config.effects.stars ? 1 : 0,
       config.effects.bloom ? 1 : 0,
       config.effects.autoRotate ? 1 : 0,
-      Number(config.effects.bloomStrength ?? 0.32)
+      Number(config.effects.bloomStrength ?? 0.32),
+      config.effects.music ? 1 : 0,
+      config.effects.rhythmLights ? 1 : 0,
+      config.effects.musicTrack ?? 'we-wish'
     ],
     g: [
       config.greeting.mainText ?? '',
@@ -147,6 +157,15 @@ export function decodeConfig(token) {
       const strength = Number(data.fx[7]);
       if (!Number.isNaN(strength)) {
         base.effects.bloomStrength = Math.min(0.85, Math.max(0.05, strength));
+      }
+      if (data.fx[8] !== undefined) {
+        base.effects.music = Boolean(data.fx[8]);
+      }
+      if (data.fx[9] !== undefined) {
+        base.effects.rhythmLights = Boolean(data.fx[9]);
+      }
+      if (VALID_TRACKS.has(data.fx[10])) {
+        base.effects.musicTrack = data.fx[10];
       }
     }
 

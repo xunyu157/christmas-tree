@@ -16,6 +16,7 @@ const VORTEX_VERTEX_SHADER = /* glsl */ `
 
   uniform float uTime;
   uniform float uPixelRatio;
+  uniform float uBeat;
 
   varying float vGold;
   varying float vTwinkle;
@@ -23,7 +24,7 @@ const VORTEX_VERTEX_SHADER = /* glsl */ `
 
   void main() {
     vGold = aGold;
-    vTwinkle = 0.65 + 0.45 * sin(uTime * 2.5 + aPhase);
+    vTwinkle = 0.65 + 0.45 * sin(uTime * 2.5 + aPhase) + uBeat * (0.12 + 0.22 * aGold);
     vEdgeFade = smoothstep(10.5, 6.4, aRadius);
 
     vec3 pos = position;
@@ -86,6 +87,7 @@ export class GroundVortex {
       uTime: { value: 0 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
       uReveal: { value: 1.0 },
+      uBeat: { value: 0 },
       uVortexColor: { value: new THREE.Color(colors.vortexColor) },
       uGoldColor: { value: new THREE.Color(colors.ribbonColor) }
     };
@@ -181,6 +183,10 @@ export class GroundVortex {
     this.mistMat.opacity = this.baseMistOpacity * ease;
     const xz = 0.16 + 0.84 * ease;
     this.group.scale.set(xz, 1, xz);
+  }
+
+  setBeat(beat) {
+    this.uniforms.uBeat.value = beat;
   }
 
   setVisible(visible) {

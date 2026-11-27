@@ -86,6 +86,7 @@ const TREE_VERTEX_SHADER = /* glsl */ `
   uniform float uTime;
   uniform float uPixelRatio;
   uniform float uAssemble;
+  uniform float uBeat;
 
   varying float vRole;
   varying float vShade;
@@ -99,13 +100,17 @@ const TREE_VERTEX_SHADER = /* glsl */ `
     float speed = aRole > 1.5 ? 3.1 : 1.9;
     float wave = 0.5 + 0.5 * sin(uTime * speed + aPhase);
     vTwinkle = aRole > 1.5 ? mix(0.68, 1.24, pow(wave, 1.6)) : mix(0.75, 1.08, wave);
+    if (aRole > 0.5) {
+      vTwinkle += uBeat * (aRole > 1.5 ? 0.28 : 0.14) * (0.45 + 0.55 * sin(aPhase + uTime * 2.2));
+    }
 
     ${SWIRL_CONVERGE_GLSL}
     pos.y += sin(uTime * 0.85 + aPhase) * 0.014 * ease;
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * uPixelRatio * (92.0 / max(-mvPosition.z, 1.0));
+    float beatSize = aRole > 0.5 ? (1.0 + uBeat * (aRole > 1.5 ? 0.14 : 0.06)) : 1.0;
+    gl_PointSize = aSize * beatSize * uPixelRatio * (92.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
@@ -155,6 +160,7 @@ const SPARKLE_VERTEX_SHADER = /* glsl */ `
   uniform float uTime;
   uniform float uPixelRatio;
   uniform float uAssemble;
+  uniform float uBeat;
 
   varying float vFlash;
   varying float vGoldMix;
@@ -163,13 +169,13 @@ const SPARKLE_VERTEX_SHADER = /* glsl */ `
   void main() {
     vGoldMix = aGoldMix;
     float wave = 0.5 + 0.5 * sin(uTime * 3.4 + aPhase);
-    vFlash = mix(0.22, 1.32, pow(wave, 2.4));
+    vFlash = mix(0.22, 1.32, pow(wave, 2.4)) + uBeat * 0.42;
 
     ${SWIRL_CONVERGE_GLSL}
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * (0.76 + 0.38 * wave) * uPixelRatio * (150.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = aSize * (0.76 + 0.38 * wave) * (1.0 + uBeat * 0.26) * uPixelRatio * (150.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
@@ -207,6 +213,7 @@ const RIBBON_VERTEX_SHADER = /* glsl */ `
   uniform float uTime;
   uniform float uPixelRatio;
   uniform float uAssemble;
+  uniform float uBeat;
 
   varying float vGlow;
   varying float vCenter;
@@ -216,7 +223,7 @@ const RIBBON_VERTEX_SHADER = /* glsl */ `
     vCenter = aCenter;
     float flow = 0.5 + 0.5 * sin(aHeight * 24.0 - uTime * 2.4 + aPhase * 0.3);
     float twinkle = 0.72 + 0.34 * sin(uTime * 3.8 + aPhase);
-    vGlow = mix(0.8, 1.24, flow) * twinkle;
+    vGlow = mix(0.8, 1.24, flow) * twinkle * (1.0 + uBeat * 0.22);
 
     ${SWIRL_CONVERGE_GLSL}
 
@@ -258,6 +265,7 @@ export class TreeBuilder {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
       uAssemble: { value: 1.0 },
+      uBeat: { value: 0 },
       uColorPrimary: { value: new THREE.Color(colors.treePrimary) },
       uColorSecondary: { value: new THREE.Color(colors.treeSecondary) },
       uColorDeep: { value: new THREE.Color(colors.treeDeep) },
@@ -268,6 +276,7 @@ export class TreeBuilder {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
       uAssemble: { value: 1.0 },
+      uBeat: { value: 0 },
       uColorSecondary: { value: new THREE.Color(colors.treeSecondary) },
       uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
     };
@@ -276,6 +285,7 @@ export class TreeBuilder {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
       uAssemble: { value: 1.0 },
+      uBeat: { value: 0 },
       uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
     };
 
@@ -523,6 +533,15 @@ export class TreeBuilder {
     this.ribbonUniforms.uAssemble.value = v;
     // 星云散开期间关闭树芯隐形遮挡锥，避免裁切星云粒子；聚合后开启以遮挡背面丝带
     this.depthCone.visible = v >= 0.72;
+  }
+
+  /**
+   * 同步八音盒实时节拍能量 [0, 1]，驱动碎钻与丝带随音乐律动闪烁
+   */
+  setBeat(beat) {
+    this.treeUniforms.uBeat.value = beat;
+    this.sparkleUniforms.uBeat.value = beat;
+    this.ribbonUniforms.uBeat.value = beat;
   }
 
   setColors(colors) {

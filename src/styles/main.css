@@ -245,6 +245,27 @@ body.intro-pending .stage-hint {
   background: linear-gradient(135deg, rgba(243, 142, 194, 0.48), rgba(147, 112, 219, 0.48));
 }
 
+.icon-pill-btn {
+  width: 38px;
+  padding: 0;
+}
+
+.icon-pill-btn.music-playing {
+  border-color: rgba(255, 204, 150, 0.56);
+  background: linear-gradient(135deg, rgba(243, 142, 194, 0.24), rgba(255, 217, 125, 0.22));
+  animation: musicGlow 2.4s ease-in-out infinite;
+}
+
+@keyframes musicGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(243, 142, 194, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(255, 217, 125, 0.48);
+  }
+}
+
 body.drawer-open .floating-actions {
   opacity: 0;
   pointer-events: none;
@@ -313,6 +334,11 @@ body.drawer-open .control-drawer {
     height: 34px;
     padding: 0 11px;
     font-size: 12.5px;
+  }
+
+  .icon-pill-btn {
+    width: 34px;
+    padding: 0;
   }
 
   .drawer-body {

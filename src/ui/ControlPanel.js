@@ -9,6 +9,7 @@ import {
   PRESETS,
   TOPPER_OPTIONS,
   FONT_OPTIONS,
+  MUSIC_OPTIONS,
   createDefaultConfig
 } from '../config/presets.js';
 import { buildShareUrl } from '../utils/share.js';
@@ -38,6 +39,8 @@ export class ControlPanel {
 
       floatingActions: document.getElementById('floating-actions'),
       giftActions: document.getElementById('gift-actions'),
+      btnToggleMusic: document.getElementById('btn-toggle-music'),
+      btnGiftMusic: document.getElementById('btn-gift-music'),
       btnToggleDrawer: document.getElementById('btn-toggle-drawer'),
       btnCloseDrawer: document.getElementById('btn-close-drawer'),
       btnQuickSnapshot: document.getElementById('btn-quick-snapshot'),
@@ -51,6 +54,7 @@ export class ControlPanel {
       presetGrid: document.getElementById('preset-grid'),
       topperGrid: document.getElementById('topper-grid'),
       fontGrid: document.getElementById('font-grid'),
+      songGrid: document.getElementById('song-grid'),
 
       colorInputs: {
         treePrimary: document.getElementById('color-treePrimary'),
@@ -62,6 +66,8 @@ export class ControlPanel {
       },
 
       fxInputs: {
+        music: document.getElementById('fx-music'),
+        rhythmLights: document.getElementById('fx-rhythmLights'),
         fireworks: document.getElementById('fx-fireworks'),
         ribbon: document.getElementById('fx-ribbon'),
         vortex: document.getElementById('fx-vortex'),
@@ -148,12 +154,41 @@ export class ControlPanel {
       });
       this.el.fontGrid.appendChild(btn);
     });
+
+    // 4. 渲染八音盒曲目按钮
+    this.el.songGrid.innerHTML = '';
+    MUSIC_OPTIONS.forEach((opt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'chip-btn';
+      btn.dataset.song = opt.id;
+      btn.innerHTML = `<span class="chip-icon">${opt.icon}</span><span>${opt.label}</span>`;
+      btn.addEventListener('click', () => {
+        this.config.effects.musicTrack = opt.id;
+        this.config.effects.music = true;
+        this.app.setMusicTrack(opt.id);
+        this._commit();
+      });
+      this.el.songGrid.appendChild(btn);
+    });
   }
 
   _bindEvents() {
     // 抽屉开合
     this.el.btnToggleDrawer.addEventListener('click', () => this.openDrawer());
     this.el.btnCloseDrawer.addEventListener('click', () => this.closeDrawer());
+
+    // 顶部音乐快捷开关（在点击手势内同步解锁播放 / 静音）
+    const handleMusicToggle = () => {
+      const next = !this.app.isMusicPlaying();
+      this.config.effects.music = next;
+      this.app.setMusicEnabled(next);
+      this.syncUI();
+      this.showToast(next ? '🎵 八音盒圣诞音乐已开启' : '🔇 已关闭八音盒音乐');
+    };
+    this.el.btnToggleMusic.addEventListener('click', handleMusicToggle);
+    this.el.btnGiftMusic.addEventListener('click', handleMusicToggle);
+    this.app.onMusicStateChange = () => this._syncMusicButtons();
 
     // 礼物模式按钮
     this.el.btnGiftRemix.addEventListener('click', () => {
@@ -195,6 +230,9 @@ export class ControlPanel {
     Object.entries(this.el.fxInputs).forEach(([key, input]) => {
       input.addEventListener('change', () => {
         this.config.effects[key] = input.checked;
+        if (key === 'music') {
+          this.app.setMusicEnabled(input.checked);
+        }
         this._commit();
       });
     });
@@ -326,6 +364,12 @@ export class ControlPanel {
       btn.classList.toggle('active', btn.dataset.font === greeting.fontStyle);
     });
 
+    // 同步曲目高亮与顶部音乐按钮状态
+    this.el.songGrid.querySelectorAll('.chip-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.song === effects.musicTrack);
+    });
+    this._syncMusicButtons();
+
     // 同步颜色选择器
     Object.entries(this.el.colorInputs).forEach(([key, input]) => {
       input.value = colors[key];
@@ -350,6 +394,17 @@ export class ControlPanel {
     }
     this.el.textColor.value = greeting.textColor;
     this.el.subTextColor.value = greeting.subTextColor;
+  }
+
+  _syncMusicButtons() {
+    const playing = this.app.isMusicPlaying();
+    const icon = playing ? '🎵' : '🔇';
+    [this.el.btnToggleMusic, this.el.btnGiftMusic].forEach((btn) => {
+      if (!btn) return;
+      btn.classList.toggle('music-playing', playing);
+      const span = btn.querySelector('.btn-icon');
+      if (span) span.textContent = icon;
+    });
   }
 
   _updateIntroKicker() {

@@ -55,6 +55,15 @@
 
       <!-- 右上角 / 底部快捷操作浮钮 -->
       <div id="floating-actions" class="floating-actions">
+        <button
+          id="btn-toggle-music"
+          class="pill-btn icon-pill-btn"
+          type="button"
+          title="开关八音盒圣诞音乐"
+          aria-label="开关八音盒圣诞音乐"
+        >
+          <span class="btn-icon">🎵</span>
+        </button>
         <button id="btn-toggle-drawer" class="pill-btn primary-pill" type="button">
           <span class="btn-icon">✨</span>
           <span class="btn-label">定制圣诞树</span>
@@ -69,8 +78,17 @@
         </button>
       </div>
 
-      <!-- 礼物观赏模式下的低调右下角入口 -->
+      <!-- 礼物观赏模式下的右上角入口 -->
       <div id="gift-actions" class="gift-actions" hidden>
+        <button
+          id="btn-gift-music"
+          class="pill-btn icon-pill-btn"
+          type="button"
+          title="开关八音盒圣诞音乐"
+          aria-label="开关八音盒圣诞音乐"
+        >
+          <span class="btn-icon">🎵</span>
+        </button>
         <button id="btn-gift-snapshot" class="pill-btn" type="button">
           <span class="btn-icon">📸</span>
           <span class="btn-label">保存贺卡</span>
@@ -157,6 +175,20 @@
               <div class="toggle-list">
                 <label class="toggle-row">
                   <span class="toggle-info">
+                    <strong>🎵 八音盒圣诞音乐</strong>
+                    <small>轻柔晶体八音盒旋律，点亮自动响起</small>
+                  </span>
+                  <input id="fx-music" type="checkbox" class="switch-input" />
+                </label>
+                <label class="toggle-row">
+                  <span class="toggle-info">
+                    <strong>💫 灯光随节奏闪烁</strong>
+                    <small>碎钻、丝带与爱心跟随音符节拍律动</small>
+                  </span>
+                  <input id="fx-rhythmLights" type="checkbox" class="switch-input" />
+                </label>
+                <label class="toggle-row">
+                  <span class="toggle-info">
                     <strong>🎆 绚丽粒子烟花</strong>
                     <small>自动绽放，点击夜空也可手动放烟花</small>
                   </span>
@@ -221,6 +253,11 @@
                 value="0.32"
                 class="range-slider"
               />
+            </div>
+
+            <div class="section-block">
+              <div class="section-label">选择八音盒曲目</div>
+              <div id="song-grid" class="chip-grid"></div>
             </div>
 
             <div class="section-block">

@@ -104,6 +104,12 @@ export const FONT_OPTIONS = [
   { id: 'neon', label: '星光手写' }
 ];
 
+export const MUSIC_OPTIONS = [
+  { id: 'we-wish', label: '祝你圣诞快乐', icon: '🎄' },
+  { id: 'jingle-bells', label: '铃儿响叮当', icon: '🔔' },
+  { id: 'silent-night', label: '平安夜', icon: '🌙' }
+];
+
 /**
  * 生成一份全新的默认配置对象（避免直接修改常量）
  */
@@ -121,7 +127,10 @@ export function createDefaultConfig() {
       stars: true,
       bloom: true,
       autoRotate: true,
-      bloomStrength: 0.32
+      bloomStrength: 0.32,
+      music: true,
+      rhythmLights: true,
+      musicTrack: 'we-wish'
     },
     greeting: {
       mainText: '亲爱的你，天天开心',

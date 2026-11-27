@@ -22,6 +22,7 @@ import { TopperBuilder } from './TopperBuilder.js';
 import { GroundVortex } from './GroundVortex.js';
 import { FireworksSystem } from './FireworksSystem.js';
 import { AtmosphereSystem } from './AtmosphereSystem.js';
+import { MusicBoxPlayer } from '../audio/MusicBoxPlayer.js';
 
 export class ChristmasApp {
   constructor(container, initialConfig, options = {}) {
@@ -104,6 +105,9 @@ export class ChristmasApp {
 
     this.atmosphere = new AtmosphereSystem(dotTexture, sparkleTexture, this.isMobile);
     this.scene.add(this.atmosphere.group);
+
+    this.music = new MusicBoxPlayer();
+    this.onMusicStateChange = null;
 
     // 电影级梦幻辉光后处理管线（UnrealBloomPass）
     this.composer = new EffectComposer(this.renderer);
@@ -219,11 +223,19 @@ export class ChristmasApp {
           hit.x = THREE.MathUtils.clamp(hit.x, -9.5, 9.5);
           hit.y = THREE.MathUtils.clamp(hit.y, -2.5, 8.0);
           this.fireworks.launchAt(hit.x, hit.y, hit.z);
+          if (this.config.effects.music && this.music.isPlaying()) {
+            this.music.playFireworkChime();
+          }
         }
       }
     };
 
+    this._onVisibilityChange = () => {
+      this.music.handleVisibilityChange(document.hidden);
+    };
+
     window.addEventListener('resize', this._onResize);
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
     this.renderer.domElement.addEventListener('pointerdown', this._onPointerDown);
     this.renderer.domElement.addEventListener('pointerup', this._onPointerUp);
   }
@@ -257,6 +269,40 @@ export class ChristmasApp {
 
     this.controls.autoRotate = config.effects.autoRotate;
     this.bloomPass.strength = config.effects.bloom ? config.effects.bloomStrength : 0;
+
+    if (!config.effects.music && this.music.isPlaying()) {
+      this.music.stop();
+      this.onMusicStateChange?.(false);
+    } else if (this.music.isPlaying()) {
+      this.music.setTrack(config.effects.musicTrack);
+    }
+  }
+
+  /**
+   * 开关八音盒圣诞音乐（需在点击事件内触发以确保手机浏览器自动解锁音频）
+   */
+  setMusicEnabled(enabled) {
+    this.config.effects.music = Boolean(enabled);
+    if (this.config.effects.music) {
+      this.music.unlock();
+      this.music.start(this.config.effects.musicTrack, 0.05);
+    } else {
+      this.music.stop();
+    }
+    this.onMusicStateChange?.(this.music.isPlaying());
+  }
+
+  setMusicTrack(trackId) {
+    this.config.effects.musicTrack = trackId;
+    if (this.music.isPlaying()) {
+      this.music.setTrack(trackId);
+    } else if (this.introState === 'lit') {
+      this.setMusicEnabled(true);
+    }
+  }
+
+  isMusicPlaying() {
+    return this.music.isPlaying();
   }
 
   /**
@@ -269,6 +315,13 @@ export class ChristmasApp {
     this.introFlags = { greetingShown: false, salvo1: false, salvo2: false };
     this.introCallbacks = callbacks;
     this.controls.autoRotateSpeed = 1.15;
+
+    if (this.config.effects.music) {
+      this.music.unlock();
+      this.music.playIgniteChime();
+      this.music.start(this.config.effects.musicTrack, 0.72);
+      this.onMusicStateChange?.(this.music.isPlaying());
+    }
   }
 
   /**
@@ -279,6 +332,8 @@ export class ChristmasApp {
     this.introElapsed = 0;
     this.introFlags = { greetingShown: false, salvo1: false, salvo2: false };
     this.controls.autoRotateSpeed = 0.55;
+    this.music.stop();
+    this.onMusicStateChange?.(false);
     this._applyIntroProgress(0);
   }
 
@@ -300,6 +355,9 @@ export class ChristmasApp {
     if (elapsed >= 1.65 && !this.introFlags.salvo1) {
       this.introFlags.salvo1 = true;
       this.fireworks.launchCelebrationSalvo();
+      if (this.config.effects.fireworks && this.config.effects.music && this.music.isPlaying()) {
+        this.music.playFireworkChime();
+      }
     }
 
     if (elapsed >= 2.18 && !this.introFlags.salvo2) {
@@ -343,9 +401,14 @@ export class ChristmasApp {
       this._applyIntroProgress(this.introElapsed);
     }
 
+    const rawBeat = this.music.update(delta);
+    const beat = this.config.effects.rhythmLights ? rawBeat : 0;
+
     this.controls.update();
+    this.tree.setBeat(beat);
     this.tree.update(elapsed);
-    this.topper.update(elapsed, this.camera);
+    this.topper.update(elapsed, this.camera, beat);
+    this.vortex.setBeat(beat);
     this.vortex.update(elapsed, delta);
     this.fireworks.update(delta);
     this.atmosphere.update(elapsed, delta);
@@ -354,8 +417,10 @@ export class ChristmasApp {
   }
 
   dispose() {
+    this.music.stop();
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('resize', this._onResize);
+    document.removeEventListener('visibilitychange', this._onVisibilityChange);
     this.renderer.domElement.removeEventListener('pointerdown', this._onPointerDown);
     this.renderer.domElement.removeEventListener('pointerup', this._onPointerUp);
     this.controls.dispose();
