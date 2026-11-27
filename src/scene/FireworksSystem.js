@@ -10,7 +10,7 @@ import * as THREE from 'three';
 const SPARKS_PER_BURST = 96;
 const TRAIL_STEPS = 4; // 每根烟花射线带 4 个拖尾星点，呈现示例图中的虚线放射感
 const POINTS_PER_BURST = SPARKS_PER_BURST * TRAIL_STEPS;
-const MAX_BURSTS = 10;
+const MAX_BURSTS = 12;
 
 const PALETTES = [
   ['#72efdd', '#ffd6a5', '#ff9ebb', '#ffffff'],
@@ -182,15 +182,19 @@ export class FireworksSystem {
   launchFinaleWave(waveIndex = 0) {
     if (!this.enabled) return;
     if (waveIndex === 0) {
-      this.launchAt(-5.0, 3.8, -5.0);
-      this.launchAt(5.0, 4.2, -5.2);
+      this.launchAt(-5.2, 5.4, -5.6);
+      this.launchAt(5.3, 5.8, -5.8);
+      this.launchAt(0.1, 7.6, -6.8);
     } else if (waveIndex === 1) {
-      this.launchAt(-2.6, 6.2, -6.0);
-      this.launchAt(6.0, 2.3, -4.6);
+      this.launchAt(-4.4, 3.9, -5.0);
+      this.launchAt(5.6, 4.1, -5.2);
+    } else if (waveIndex === 2) {
+      this.launchAt(-6.2, 2.6, -4.8);
+      this.launchAt(2.9, 6.5, -6.0);
+      this.launchAt(-2.5, 6.3, -6.0);
     } else {
-      this.launchAt(-6.2, 2.4, -4.8);
-      this.launchAt(2.8, 6.4, -6.0);
-      this.launchAt(0.0, 7.1, -6.8);
+      this.launchAt(-4.0, 5.4, -5.6);
+      this.launchAt(4.4, 5.2, -5.5);
     }
   }
 

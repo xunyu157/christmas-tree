@@ -45,29 +45,33 @@ export class ChristmasApp {
 
     this.introState = this.startWithIntro ? 'idle' : 'lit';
     this.introElapsed = 0;
-    this.introDuration = 6.8;
+    this.introDuration = 14.4;
+    this.worldReveal = this.startWithIntro ? 0 : 1;
     this.introFlags = {
       burstChime: false,
       greetingShown: false,
       wave1: false,
       wave2: false,
-      wave3: false
+      wave3: false,
+      wave4: false
     };
     this.introCallbacks = { onGreetingReveal: null, onComplete: null };
 
     this.scene = new THREE.Scene();
+    this.blackBg = new THREE.Color('#000000');
+    this._tmpFogColor = new THREE.Color();
 
-    // 静谧雪夜月光照明（柔和清冷月光 + 星空微弱反射光，不抢中心圣诞树风头）
-    const hemiLight = new THREE.HemisphereLight('#9ec0e8', '#1c2842', 0.58);
-    this.scene.add(hemiLight);
+    // 静谧雪夜月光照明（开场先保持熄灭以凸显纯黑中圣诞树诞生，成树后随光波柔和亮起）
+    this.hemiLight = new THREE.HemisphereLight('#9ec0e8', '#1c2842', 0.58);
+    this.scene.add(this.hemiLight);
 
-    const moonLight = new THREE.DirectionalLight('#cfe4ff', 0.85);
-    moonLight.position.set(-16, 22, -18);
-    this.scene.add(moonLight);
+    this.moonLight = new THREE.DirectionalLight('#cfe4ff', 0.85);
+    this.moonLight.position.set(-16, 22, -18);
+    this.scene.add(this.moonLight);
 
-    const frontFillLight = new THREE.DirectionalLight('#8faad4', 0.45);
-    frontFillLight.position.set(8, 10, 18);
-    this.scene.add(frontFillLight);
+    this.frontFillLight = new THREE.DirectionalLight('#8faad4', 0.45);
+    this.frontFillLight.position.set(8, 10, 18);
+    this.scene.add(this.frontFillLight);
 
     this.nightFog = new THREE.Fog(initialConfig.colors.skyBottom, 42, 126);
     this.scene.fog = initialConfig.effects.winterVillage ? this.nightFog : null;
@@ -191,23 +195,115 @@ export class ChristmasApp {
   }
 
   /**
-   * 更新 WebGL 内部深空夜幕渐变背景（避免 Bloom 后处理覆盖透明通道）
+   * 更新 WebGL 内部深空夜幕渐变背景（支持从天顶向地平线自上而下倾泻点亮）
    */
-  _updateSkyBackground(skyTop, skyBottom) {
+  _updateSkyBackground(skyTop, skyBottom, skyProgress = 1.0) {
+    const p = THREE.MathUtils.clamp(skyProgress, 0, 1);
+    if (p <= 0.001) {
+      this.scene.background = this.blackBg;
+      return;
+    }
+
     const ctx = this.skyCanvas.getContext('2d');
     const topCol = new THREE.Color(skyTop);
     const botCol = new THREE.Color(skyBottom);
-    const midUpper = topCol.clone().lerp(botCol, 0.24).getStyle();
-    const midLower = topCol.clone().lerp(botCol, 0.70).getStyle();
-
     const grad = ctx.createLinearGradient(0, 0, 0, this.skyCanvas.height);
-    grad.addColorStop(0.0, skyTop);
-    grad.addColorStop(0.36, midUpper);
-    grad.addColorStop(0.74, midLower);
-    grad.addColorStop(1.0, skyBottom);
+
+    if (p >= 0.999) {
+      grad.addColorStop(0.0, skyTop);
+      grad.addColorStop(0.36, topCol.clone().lerp(botCol, 0.24).getStyle());
+      grad.addColorStop(0.74, topCol.clone().lerp(botCol, 0.70).getStyle());
+      grad.addColorStop(1.0, skyBottom);
+    } else {
+      for (let i = 0; i <= 8; i += 1) {
+        const v = i / 8;
+        const baseMix =
+          v < 0.36
+            ? (v / 0.36) * 0.24
+            : v < 0.74
+              ? 0.24 + ((v - 0.36) / 0.38) * 0.46
+              : 0.7 + ((v - 0.74) / 0.26) * 0.3;
+        const localReveal = THREE.MathUtils.smoothstep(p, v * 0.52, v * 0.52 + 0.48);
+        const stopCol = topCol.clone().lerp(botCol, baseMix).multiplyScalar(localReveal);
+        grad.addColorStop(v, stopCol.getStyle());
+      }
+    }
+
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, this.skyCanvas.width, this.skyCanvas.height);
     this.skyTexture.needsUpdate = true;
+    this.scene.background = this.skyTexture;
+  }
+
+  /**
+   * 烟花破晓自上而下“倾泻”唤醒全背景（0..1 对应天顶烟花 -> 群星月云 -> 远山雪脊 -> 松林木屋路灯 -> 雪地飘雪）
+   */
+  _applyWorldReveal(progress) {
+    const p = THREE.MathUtils.clamp(progress, 0, 1);
+    this.worldReveal = p;
+
+    if (p <= 0.001) {
+      this.hemiLight.intensity = 0;
+      this.moonLight.intensity = 0;
+      this.frontFillLight.intensity = 0;
+      this.atmosphere.setReveal(0, 0);
+      this.village.setVisible(false);
+      this.village.setReveal(0);
+      this.scene.fog = null;
+      this.scene.background = this.blackBg;
+      return;
+    }
+
+    const showVillage = Boolean(this.config.effects.winterVillage);
+    this.nightFog.color.set(this.config.colors.skyBottom);
+    this.nightFog.near = 42;
+    this.nightFog.far = 126;
+
+    if (p >= 0.999) {
+      this.hemiLight.intensity = 0.58;
+      this.moonLight.intensity = 0.85;
+      this.frontFillLight.intensity = 0.45;
+      this.atmosphere.setReveal(1, 1);
+      this.village.setVisible(showVillage);
+      this.village.setReveal(1);
+      this._updateSkyBackground(this.config.colors.skyTop, this.config.colors.skyBottom, 1);
+      this.scene.fog = showVillage ? this.nightFog : null;
+      return;
+    }
+
+    const skyP = THREE.MathUtils.clamp(p / 0.38, 0, 1);
+    const starP = THREE.MathUtils.clamp((p - 0.02) / 0.4, 0, 1);
+    const moonP = THREE.MathUtils.clamp((p - 0.05) / 0.34, 0, 1);
+    const cloudP = THREE.MathUtils.clamp((p - 0.1) / 0.38, 0, 1);
+    const lightP = THREE.MathUtils.clamp((p - 0.04) / 0.34, 0, 1);
+    const curtainT = THREE.MathUtils.clamp((p - 0.065) / 0.9, 0, 1);
+    const curtainEase = curtainT * curtainT * (3 - 2 * curtainT);
+    const cascadeY = THREE.MathUtils.lerp(25.5, -12.5, curtainEase);
+    const edgeGlow = Math.sin(curtainT * Math.PI);
+    const cottageP = THREE.MathUtils.clamp((p - 0.42) / 0.34, 0, 1);
+    const lampP = THREE.MathUtils.clamp((p - 0.5) / 0.32, 0, 1);
+    const groundP = THREE.MathUtils.clamp((p - 0.58) / 0.38, 0, 1);
+
+    const lightEase = THREE.MathUtils.smoothstep(lightP, 0, 1);
+    this.hemiLight.intensity = 0.58 * lightEase;
+    this.moonLight.intensity = 0.85 * lightEase;
+    this.frontFillLight.intensity = 0.45 * lightEase;
+
+    this._updateSkyBackground(this.config.colors.skyTop, this.config.colors.skyBottom, skyP);
+    this.scene.fog = showVillage ? this.nightFog : null;
+    this.atmosphere.setReveal(starP, groundP);
+
+    this.village.setVisible(showVillage);
+    this.village.setReveal({
+      active: true,
+      cascadeY,
+      edgeGlow,
+      moonP,
+      cloudP,
+      cottageP,
+      lampP,
+      groundP
+    });
   }
 
   /**
@@ -240,29 +336,35 @@ export class ChristmasApp {
   }
 
   /**
-   * 6.8 秒电影感开场运镜编排（近景聚光 -> 拉远俯瞰全背景 -> 左旋追光下绕 -> 低角仰望 -> 归位正中）
+   * 14.4 秒烟花破晓与多角度运镜编排（0.3s 独亮停顿 -> 第一波烟花炸开 -> 仰望倾泻光瀑缓缓收归全景）
    */
   _applyIntroCamera(elapsed) {
     const hero = this._getHeroFraming();
     const distScale = hero.dist / 23.4;
 
     const kf = [
-      { t: 0.0, az: 0.0, dist: 12.2 * distScale, camY: 2.3, targetY: 2.2 },
-      { t: 1.35, az: 0.14, dist: 9.2 * distScale, camY: 2.45, targetY: 2.2 },
-      { t: 2.55, az: 0.82, dist: 25.6 * distScale, camY: 8.8, targetY: 2.4 },
-      { t: 3.95, az: -0.58, dist: 16.4 * distScale, camY: 5.2, targetY: 2.7 },
-      { t: 5.1, az: -0.22, dist: 19.2 * distScale, camY: 1.7, targetY: 1.9 },
-      { t: 6.15, az: 0.0, dist: hero.dist, camY: hero.camY, targetY: hero.targetY },
-      { t: 6.8, az: 0.0, dist: hero.dist, camY: hero.camY, targetY: hero.targetY }
+      { t: 0.0, az: 0.0, dist: 11.8 * distScale, camY: 2.2, targetY: 2.2 },
+      { t: 1.95, az: 0.17, dist: 7.6 * distScale, camY: 2.35, targetY: 2.2 },
+      { t: 3.4, az: 0.9, dist: 26.2 * distScale, camY: 9.4, targetY: 2.1 },
+      { t: 4.15, az: 1.08, dist: 24.8 * distScale, camY: 8.8, targetY: 2.2 },
+      { t: 5.85, az: -0.18, dist: 14.8 * distScale, camY: 6.2, targetY: 3.1 },
+      { t: 7.05, az: -0.44, dist: 15.6 * distScale, camY: 4.5, targetY: 2.4 },
+      { t: 7.65, az: -0.68, dist: 16.8 * distScale, camY: 3.2, targetY: 2.2 },
+      { t: 9.35, az: -1.16, dist: 18.8 * distScale, camY: 1.45, targetY: 1.85 },
+      { t: 10.35, az: -0.22, dist: 22.0 * distScale, camY: 2.9, targetY: 2.15 },
+      { t: 10.65, az: -0.06, dist: 23.0 * distScale, camY: 3.05, targetY: 2.55 },
+      { t: 11.85, az: 0.05, dist: 24.4 * distScale, camY: 4.45, targetY: 2.85 },
+      { t: 13.45, az: 0.0, dist: hero.dist, camY: hero.camY, targetY: hero.targetY },
+      { t: 14.4, az: 0.0, dist: hero.dist, camY: hero.camY, targetY: hero.targetY }
     ];
 
-    let az = hero.az || 0;
+    let az = 0;
     let dist = hero.dist;
     let camY = hero.camY;
     let targetY = hero.targetY;
 
-    const t = THREE.MathUtils.clamp(elapsed, 0, 6.8);
-    if (t < 6.15) {
+    const t = THREE.MathUtils.clamp(elapsed, 0, 14.4);
+    if (t < 13.45) {
       let seg = 0;
       for (let i = 0; i < kf.length - 2; i += 1) {
         if (t >= kf[i].t && t <= kf[i + 1].t) {
@@ -277,7 +379,7 @@ export class ChristmasApp {
       const u = THREE.MathUtils.clamp((t - k1.t) / dt, 0, 1);
 
       const tangentAt = (idx, prop) => {
-        if (idx <= 0 || idx >= 5) return 0;
+        if (idx <= 0 || idx >= 11) return 0;
         const prev = kf[idx - 1];
         const curr = kf[idx];
         const next = kf[idx + 1];
@@ -318,6 +420,7 @@ export class ChristmasApp {
       this.topper.setPixelRatio(this.pixelRatio);
       this.vortex.setPixelRatio(this.pixelRatio);
       this.atmosphere.setPixelRatio(this.pixelRatio);
+      this.introEffects.setPixelRatio(this.pixelRatio);
     };
 
     this._onPointerDown = (e) => {
@@ -391,11 +494,9 @@ export class ChristmasApp {
     this.atmosphere.setStarsVisible(config.effects.stars);
     this.atmosphere.setSnowVisible(config.effects.snow);
 
-    this.village.setVisible(config.effects.winterVillage);
     this.village.setColors(config.colors);
     this.introEffects.setColors(config.colors);
-    this.nightFog.color.set(config.colors.skyBottom);
-    this.scene.fog = config.effects.winterVillage ? this.nightFog : null;
+    this._applyWorldReveal(this.introState === 'lit' ? 1 : this.worldReveal);
 
     this.controls.autoRotate = config.effects.autoRotate;
     this.bloomPass.strength = config.effects.bloom ? config.effects.bloomStrength : 0;
@@ -436,7 +537,7 @@ export class ChristmasApp {
   }
 
   /**
-   * 触发开场“点亮圣诞树”6.8 秒多幕式震撼点亮动画
+   * 触发开场“点亮圣诞树”14.4 秒烟花破晓 · 光瀑倾泻交响动画
    */
   ignite(callbacks = {}) {
     if (this.introState !== 'idle') return;
@@ -447,7 +548,8 @@ export class ChristmasApp {
       greetingShown: false,
       wave1: false,
       wave2: false,
-      wave3: false
+      wave3: false,
+      wave4: false
     };
     this.introCallbacks = callbacks;
     this.controls.enabled = false;
@@ -456,7 +558,7 @@ export class ChristmasApp {
     if (this.config.effects.music) {
       this.music.unlock();
       this.music.playIgniteChime();
-      this.music.start(this.config.effects.musicTrack, 1.65);
+      this.music.start(this.config.effects.musicTrack, 2.35);
       this.onMusicStateChange?.(this.music.isPlaying());
     }
 
@@ -464,7 +566,7 @@ export class ChristmasApp {
   }
 
   /**
-   * 重置为全黑等待点亮状态（用于开场首屏与重播点亮仪式）
+   * 重置为全黑等待点亮状态（背景熄灭，仅保留待点燃星光）
    */
   resetIntro() {
     this.introState = 'idle';
@@ -474,7 +576,8 @@ export class ChristmasApp {
       greetingShown: false,
       wave1: false,
       wave2: false,
-      wave3: false
+      wave3: false,
+      wave4: false
     };
     this.controls.enabled = false;
     this.controls.autoRotateSpeed = 0.55;
@@ -484,7 +587,8 @@ export class ChristmasApp {
     this.fireworks.clearAll();
 
     this._applyIntroCamera(0);
-    this.tree.setIntroProgress(0, 0);
+    this._applyWorldReveal(0);
+    this.tree.setIntroProgress(0, 0, 0, 0);
     this.topper.setReveal(0);
     this.vortex.setReveal(0);
     this.introEffects.setIdle(this.camera);
@@ -494,30 +598,28 @@ export class ChristmasApp {
     this._applyIntroCamera(elapsed);
     this.introEffects.updateIntro(elapsed, this.camera);
 
-    const rawRib = THREE.MathUtils.clamp((elapsed - 2.55) / 2.4, 0, 1);
-    const ribbonReveal = rawRib < 0.5 ? 2 * rawRib * rawRib : 1 - Math.pow(-2 * rawRib + 2, 2) / 2;
-    const treeReveal = THREE.MathUtils.clamp((elapsed - 2.9) / 2.4, 0, 1);
-    this.tree.setIntroProgress(ribbonReveal, treeReveal);
+    const burst = THREE.MathUtils.clamp((elapsed - 2.0) / 1.4, 0, 1);
+    const hazeAlpha = THREE.MathUtils.clamp((elapsed - 2.0) / 0.48, 0, 1);
+    const rawRib = THREE.MathUtils.clamp((elapsed - 4.15) / 2.9, 0, 1);
+    const ribbonGather = rawRib < 0.5 ? 2 * rawRib * rawRib : 1 - Math.pow(-2 * rawRib + 2, 2) / 2;
+    const treeGather = THREE.MathUtils.clamp((elapsed - 7.65) / 2.7, 0, 1);
+    this.tree.setIntroProgress(burst, hazeAlpha, ribbonGather, treeGather);
 
-    const topperP = THREE.MathUtils.clamp((elapsed - 2.55) / 0.7, 0, 1);
+    const topperP = THREE.MathUtils.clamp((elapsed - 4.15) / 0.8, 0, 1);
     this.topper.setReveal(topperP);
 
-    const vortexP = THREE.MathUtils.clamp((elapsed - 4.6) / 0.95, 0, 1);
+    const vortexP = THREE.MathUtils.clamp((elapsed - 9.6) / 0.95, 0, 1);
     this.vortex.setReveal(vortexP);
 
-    if (elapsed >= 1.4 && !this.introFlags.burstChime) {
+    // 10.35 -> 10.65s 独自闪耀停顿 0.3s 后，10.65s 第一波烟花先在黑空中炸开，10.68 -> 14.05s 光瀑倾泻照亮世界
+    if (elapsed >= 2.0 && !this.introFlags.burstChime) {
       this.introFlags.burstChime = true;
       if (this.config.effects.music && this.music.isPlaying()) {
         this.music.playFireworkChime();
       }
     }
 
-    if (elapsed >= 5.35 && !this.introFlags.greetingShown) {
-      this.introFlags.greetingShown = true;
-      this.introCallbacks.onGreetingReveal?.();
-    }
-
-    if (elapsed >= 5.4 && !this.introFlags.wave1) {
+    if (elapsed >= 10.65 && !this.introFlags.wave1) {
       this.introFlags.wave1 = true;
       this.fireworks.launchFinaleWave(0);
       if (this.config.effects.fireworks && this.config.effects.music && this.music.isPlaying()) {
@@ -525,7 +627,10 @@ export class ChristmasApp {
       }
     }
 
-    if (elapsed >= 5.92 && !this.introFlags.wave2) {
+    const worldP = THREE.MathUtils.clamp((elapsed - 10.68) / 3.37, 0, 1);
+    this._applyWorldReveal(worldP);
+
+    if (elapsed >= 11.85 && !this.introFlags.wave2) {
       this.introFlags.wave2 = true;
       this.fireworks.launchFinaleWave(1);
       if (this.config.effects.fireworks && this.config.effects.music && this.music.isPlaying()) {
@@ -533,14 +638,28 @@ export class ChristmasApp {
       }
     }
 
-    if (elapsed >= 6.4 && !this.introFlags.wave3) {
+    if (elapsed >= 12.45 && !this.introFlags.greetingShown) {
+      this.introFlags.greetingShown = true;
+      this.introCallbacks.onGreetingReveal?.();
+    }
+
+    if (elapsed >= 12.95 && !this.introFlags.wave3) {
       this.introFlags.wave3 = true;
       this.fireworks.launchFinaleWave(2);
+      if (this.config.effects.fireworks && this.config.effects.music && this.music.isPlaying()) {
+        this.music.playFireworkChime();
+      }
+    }
+
+    if (elapsed >= 13.85 && !this.introFlags.wave4) {
+      this.introFlags.wave4 = true;
+      this.fireworks.launchFinaleWave(3);
     }
 
     if (elapsed >= this.introDuration && this.introState === 'igniting') {
       this.introState = 'lit';
-      this.tree.setIntroProgress(1, 1);
+      this._applyWorldReveal(1);
+      this.tree.setIntroProgress(1, 1, 1, 1);
       this.topper.setReveal(1);
       this.vortex.setReveal(1);
       this.introEffects.setFinished();

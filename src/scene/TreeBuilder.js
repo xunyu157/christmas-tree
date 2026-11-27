@@ -6,7 +6,8 @@
  * 2. 五色独立宝石颗粒：深紫暗影、紫粉主钻、暖香槟金钻、银白珍珠钻、冷调蓝紫星屑颗颗分明；
  * 3. 纯圆滑圆锥螺旋金带 + 隐形树芯遮挡锥（colorWrite: false）：
  *    金带沿纯平滑螺旋线盘旋，绝不凸起、绝不断裂；隐形遮挡锥挡住绕到树背面的丝带，同时保留树身通透星隙！
- * 4. GPU 开场自上而下显现动画：未点亮时隐藏，开场灯带粒子从树梢向下环绕点亮金带，碎钻本体随之自上而下绽放。
+ * 4. GPU 粒子雾霾爆发 + 两阶段环绕汇聚动画：全黑聚光爆开成漫天粒子雾霾，随后先自上而下凝聚成流光金带，
+ *    剩余粒子继续大尺度环绕旋涡向心聚拢塑成璀璨碎钻圣诞树。
  */
 
 import * as THREE from 'three';
@@ -41,68 +42,101 @@ function getSmoothTreeProfile(t, angle) {
   };
 }
 
-const TOP_DOWN_TREE_REVEAL_GLSL = /* glsl */ `
+/**
+ * 为开场“粒子雾霾”生成多层次 3D 星尘散落云区坐标
+ */
+function createHazeCloudPosition() {
+  const band = Math.random();
+  let r;
+  let y;
+  if (band < 0.45) {
+    // 45% 庭院中近景浓密微雾星云
+    r = 4.2 + Math.random() * 7.3;
+    y = -3.0 + Math.random() * 12.2;
+  } else if (band < 0.8) {
+    // 35% 环绕雪谷的宽广银河雾霾带
+    r = 11.5 + Math.random() * 8.0;
+    y = -2.4 + Math.random() * 14.4;
+  } else {
+    // 20% 高空璀璨星云顶幕
+    r = 2.5 + Math.random() * 11.5;
+    y = 5.2 + Math.random() * 8.6;
+  }
+  const angle = Math.random() * Math.PI * 2;
+  return [Math.cos(angle) * r, y, Math.sin(angle) * r];
+}
+
+const TREE_ORBIT_CONVERGE_GLSL = /* glsl */ `
   vReveal = 1.0;
   vec3 pos = position;
-  float ease = 1.0;
-  if (uTreeReveal < 0.999) {
-    float front = 1.08 - uTreeReveal * 1.24;
-    float jitter = (aDelay - 0.15) * 0.35;
-    float localP = smoothstep(front - 0.10, front + 0.22, aHeight + jitter);
-    if (localP <= 0.002) {
-      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-      gl_PointSize = 0.0;
-      return;
-    }
-    ease = 1.0 - pow(1.0 - localP, 3.0);
-    float twist = (1.0 - ease) * 1.2;
-    float cs = cos(twist);
-    float sn = sin(twist);
-    vec2 radialDir = length(position.xz) > 0.001 ? normalize(position.xz) : vec2(1.0, 0.0);
-    vec3 offsetPos = vec3(
-      position.x + radialDir.x * 0.75 * (1.0 - ease),
-      position.y + 0.35 * (1.0 - ease),
-      position.z + radialDir.y * 0.75 * (1.0 - ease)
+  float convEase = 1.0;
+  if (uTreeGather < 0.999 || uBurst < 0.999) {
+    float burstEase = 1.0 - pow(1.0 - clamp(uBurst, 0.0, 1.0), 3.0);
+    float startP = (1.0 - aHeight) * 0.36 + aDelay * 0.32;
+    float localP = clamp((uTreeGather - startP) / 0.42, 0.0, 1.0);
+    convEase = localP * localP * (3.0 - 2.0 * localP);
+
+    vec3 seedCenter = vec3(0.0, 2.2, 0.0);
+    vec3 burstPos = mix(seedCenter, aHazePos, burstEase);
+    float driftAng = uTime * 0.24 * (1.0 - convEase);
+    float cd = cos(driftAng);
+    float sd = sin(driftAng);
+    vec3 hazeSwirl = vec3(
+      burstPos.x * cd - burstPos.z * sd,
+      burstPos.y + sin(uTime * 1.4 + aPhase) * 0.28 * (1.0 - convEase),
+      burstPos.x * sd + burstPos.z * cd
     );
+
+    float orbitSwirl = (1.0 - convEase) * 4.4 * smoothstep(0.0, 0.45, localP);
+    float cs = cos(orbitSwirl);
+    float sn = sin(orbitSwirl);
+    vec3 mixed = mix(hazeSwirl, position, convEase);
     pos = vec3(
-      offsetPos.x * cs - offsetPos.z * sn,
-      offsetPos.y,
-      offsetPos.x * sn + offsetPos.z * cs
+      mixed.x * cs - mixed.z * sn,
+      mixed.y,
+      mixed.x * sn + mixed.z * cs
     );
-    float igniteFlash = exp(-pow((localP - 0.45) * 4.5, 2.0)) * 0.55 * step(0.005, uTreeReveal) * step(uTreeReveal, 0.995);
-    vReveal = mix(0.18, 1.0, ease) + igniteFlash;
+
+    float igniteFlash = exp(-pow((localP - 0.86) * 6.5, 2.0)) * 0.55 * step(0.01, localP) * step(localP, 0.99);
+    vReveal = mix(0.82, 1.0, convEase) * uHazeAlpha + igniteFlash;
   }
 `;
 
-const TOP_DOWN_RIBBON_REVEAL_GLSL = /* glsl */ `
+const RIBBON_ORBIT_CONVERGE_GLSL = /* glsl */ `
   vReveal = 1.0;
+  vHazeMix = 0.0;
   vec3 pos = position;
-  float ease = 1.0;
-  if (uRibbonReveal < 0.999) {
-    float head = 1.03 - uRibbonReveal * 1.08;
-    float localP = smoothstep(head - 0.03, head + 0.13, aHeight);
-    if (localP <= 0.002) {
-      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-      gl_PointSize = 0.0;
-      return;
-    }
-    ease = 1.0 - pow(1.0 - localP, 3.0);
-    float twist = (1.0 - ease) * 0.85;
-    float cs = cos(twist);
-    float sn = sin(twist);
-    vec2 radialDir = length(position.xz) > 0.001 ? normalize(position.xz) : vec2(1.0, 0.0);
-    vec3 offsetPos = vec3(
-      position.x + radialDir.x * 1.15 * (1.0 - ease),
-      position.y + 0.16 * (1.0 - ease),
-      position.z + radialDir.y * 1.15 * (1.0 - ease)
+  float convEase = 1.0;
+  if (uRibbonGather < 0.999 || uBurst < 0.999) {
+    float burstEase = 1.0 - pow(1.0 - clamp(uBurst, 0.0, 1.0), 3.0);
+    float order = 1.0 - aHeight;
+    float localP = clamp((uRibbonGather - order * 0.68) / 0.32, 0.0, 1.0);
+    convEase = localP * localP * (3.0 - 2.0 * localP);
+    vHazeMix = 1.0 - convEase;
+
+    vec3 seedCenter = vec3(0.0, 2.2, 0.0);
+    vec3 burstPos = mix(seedCenter, aHazePos, burstEase);
+    float driftAng = uTime * 0.26 * (1.0 - convEase);
+    float cd = cos(driftAng);
+    float sd = sin(driftAng);
+    vec3 hazeSwirl = vec3(
+      burstPos.x * cd - burstPos.z * sd,
+      burstPos.y + sin(uTime * 1.5 + aPhase) * 0.25 * (1.0 - convEase),
+      burstPos.x * sd + burstPos.z * cd
     );
+
+    float swirl = (1.0 - convEase) * 2.8 * smoothstep(0.0, 0.35, localP);
+    float cs = cos(swirl);
+    float sn = sin(swirl);
+    vec3 mixed = mix(hazeSwirl, position, convEase);
     pos = vec3(
-      offsetPos.x * cs - offsetPos.z * sn,
-      offsetPos.y,
-      offsetPos.x * sn + offsetPos.z * cs
+      mixed.x * cs - mixed.z * sn,
+      mixed.y,
+      mixed.x * sn + mixed.z * cs
     );
-    float headFlare = exp(-pow((aHeight - head - 0.04) * 14.0, 2.0)) * step(0.005, uRibbonReveal) * step(uRibbonReveal, 0.995);
-    vReveal = mix(0.25, 1.0, ease) + headFlare * 0.85;
+
+    float headFlare = exp(-pow((localP - 0.84) * 7.0, 2.0)) * 0.72 * step(0.01, localP) * step(localP, 0.99);
+    vReveal = mix(0.75, 1.0, convEase) * uHazeAlpha + headFlare;
   }
 `;
 
@@ -111,12 +145,15 @@ const TREE_VERTEX_SHADER = /* glsl */ `
   attribute float aPhase;
   attribute float aRole;
   attribute float aShade;
+  attribute vec3 aHazePos;
   attribute float aHeight;
   attribute float aDelay;
 
   uniform float uTime;
   uniform float uPixelRatio;
-  uniform float uTreeReveal;
+  uniform float uBurst;
+  uniform float uHazeAlpha;
+  uniform float uTreeGather;
   uniform float uBeat;
 
   varying float vRole;
@@ -135,13 +172,23 @@ const TREE_VERTEX_SHADER = /* glsl */ `
       vTwinkle += uBeat * (aRole > 1.5 ? 0.28 : 0.14) * (0.45 + 0.55 * sin(aPhase + uTime * 2.2));
     }
 
-    ${TOP_DOWN_TREE_REVEAL_GLSL}
-    pos.y += sin(uTime * 0.85 + aPhase) * 0.014 * ease;
+    ${TREE_ORBIT_CONVERGE_GLSL}
+    if (uTreeGather < 0.999 || uBurst < 0.999) {
+      if (aRole < 0.5 && convEase < 0.18) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        gl_PointSize = 0.0;
+        return;
+      }
+      if (aRole < 0.5) {
+        vReveal *= smoothstep(0.18, 0.75, convEase);
+      }
+    }
+    pos.y += sin(uTime * 0.85 + aPhase) * 0.014 * convEase;
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     float beatSize = aRole > 0.5 ? (1.0 + uBeat * (aRole > 1.5 ? 0.14 : 0.06)) : 1.0;
-    gl_PointSize = aSize * beatSize * mix(0.22, 1.0, ease) * uPixelRatio * (92.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = aSize * beatSize * mix(0.68, 1.0, convEase) * uPixelRatio * (92.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
@@ -185,12 +232,15 @@ const SPARKLE_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
   attribute float aPhase;
   attribute float aGoldMix;
+  attribute vec3 aHazePos;
   attribute float aHeight;
   attribute float aDelay;
 
   uniform float uTime;
   uniform float uPixelRatio;
-  uniform float uTreeReveal;
+  uniform float uBurst;
+  uniform float uHazeAlpha;
+  uniform float uTreeGather;
   uniform float uBeat;
 
   varying float vFlash;
@@ -202,11 +252,11 @@ const SPARKLE_VERTEX_SHADER = /* glsl */ `
     float wave = 0.5 + 0.5 * sin(uTime * 3.4 + aPhase);
     vFlash = mix(0.22, 1.32, pow(wave, 2.4)) + uBeat * 0.42;
 
-    ${TOP_DOWN_TREE_REVEAL_GLSL}
+    ${TREE_ORBIT_CONVERGE_GLSL}
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * (0.76 + 0.38 * wave) * (1.0 + uBeat * 0.26) * mix(0.22, 1.0, ease) * uPixelRatio * (150.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = aSize * (0.76 + 0.38 * wave) * (1.0 + uBeat * 0.26) * mix(1.35, 1.0, convEase) * uPixelRatio * (150.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
@@ -236,17 +286,21 @@ const SPARKLE_FRAGMENT_SHADER = /* glsl */ `
 const RIBBON_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
   attribute float aPhase;
+  attribute vec3 aHazePos;
   attribute float aHeight;
   attribute float aCenter;
 
   uniform float uTime;
   uniform float uPixelRatio;
-  uniform float uRibbonReveal;
+  uniform float uBurst;
+  uniform float uHazeAlpha;
+  uniform float uRibbonGather;
   uniform float uBeat;
 
   varying float vGlow;
   varying float vCenter;
   varying float vReveal;
+  varying float vHazeMix;
 
   void main() {
     vCenter = aCenter;
@@ -254,29 +308,32 @@ const RIBBON_VERTEX_SHADER = /* glsl */ `
     float twinkle = 0.72 + 0.34 * sin(uTime * 3.8 + aPhase);
     vGlow = mix(0.8, 1.24, flow) * twinkle * (1.0 + uBeat * 0.22);
 
-    ${TOP_DOWN_RIBBON_REVEAL_GLSL}
+    ${RIBBON_ORBIT_CONVERGE_GLSL}
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * (0.9 + 0.18 * flow) * mix(0.35, 1.0, ease) * uPixelRatio * (90.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = aSize * (0.9 + 0.18 * flow) * mix(1.85, 1.0, convEase) * uPixelRatio * (90.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
 const RIBBON_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uRibbonColor;
+  uniform float uHazeAlpha;
   varying float vGlow;
   varying float vCenter;
   varying float vReveal;
+  varying float vHazeMix;
 
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
     float dist = length(uv);
     if (dist > 0.5) discard;
 
-    // 柔羽化星尘颗粒：中心璀璨香槟金、两侧如细碎金粉般自然散开，告别生硬黄绳感
+    // 柔羽化星尘颗粒：未归位时呈现柔美粒子雾霾薄纱，归位后化作璀璨香槟金流光灯带
     float soft = pow(smoothstep(0.5, 0.04, dist), 1.85);
     vec3 goldCore = mix(uRibbonColor, vec3(1.0, 0.98, 0.88), vCenter * 0.55);
-    float alpha = soft * (0.34 + 0.54 * vCenter) * mix(0.35, 1.0, min(vReveal, 1.0));
+    float hazeSoft = mix(1.0, 0.45, vHazeMix);
+    float alpha = soft * (0.34 + 0.54 * vCenter) * mix(0.35, 1.0, min(vReveal, 1.0)) * hazeSoft * uHazeAlpha;
     gl_FragColor = vec4(goldCore * vGlow * vReveal, alpha);
   }
 `;
@@ -294,7 +351,9 @@ export class TreeBuilder {
     this.treeUniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
-      uTreeReveal: { value: 1.0 },
+      uBurst: { value: 1.0 },
+      uHazeAlpha: { value: 1.0 },
+      uTreeGather: { value: 1.0 },
       uBeat: { value: 0 },
       uColorPrimary: { value: new THREE.Color(colors.treePrimary) },
       uColorSecondary: { value: new THREE.Color(colors.treeSecondary) },
@@ -305,7 +364,9 @@ export class TreeBuilder {
     this.sparkleUniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
-      uTreeReveal: { value: 1.0 },
+      uBurst: { value: 1.0 },
+      uHazeAlpha: { value: 1.0 },
+      uTreeGather: { value: 1.0 },
       uBeat: { value: 0 },
       uColorSecondary: { value: new THREE.Color(colors.treeSecondary) },
       uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
@@ -314,7 +375,9 @@ export class TreeBuilder {
     this.ribbonUniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: pr },
-      uRibbonReveal: { value: 1.0 },
+      uBurst: { value: 1.0 },
+      uHazeAlpha: { value: 1.0 },
+      uRibbonGather: { value: 1.0 },
       uBeat: { value: 0 },
       uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
     };
@@ -353,6 +416,7 @@ export class TreeBuilder {
   _buildTreeParticles() {
     const count = this.particleCount;
     const positions = new Float32Array(count * 3);
+    const hazePositions = new Float32Array(count * 3);
     const heights = new Float32Array(count);
     const delays = new Float32Array(count);
     const sizes = new Float32Array(count);
@@ -377,6 +441,11 @@ export class TreeBuilder {
       positions[i * 3] = Math.cos(angle) * r;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
+
+      const [hx, hy, hz] = createHazeCloudPosition();
+      hazePositions[i * 3] = hx;
+      hazePositions[i * 3 + 1] = hy;
+      hazePositions[i * 3 + 2] = hz;
 
       heights[i] = t;
       delays[i] = Math.random() * 0.3;
@@ -407,6 +476,7 @@ export class TreeBuilder {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('aHazePos', new THREE.BufferAttribute(hazePositions, 3));
     geometry.setAttribute('aHeight', new THREE.BufferAttribute(heights, 1));
     geometry.setAttribute('aDelay', new THREE.BufferAttribute(delays, 1));
     geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
@@ -429,6 +499,7 @@ export class TreeBuilder {
   _buildSparkleParticles() {
     const count = this.sparkleCount;
     const positions = new Float32Array(count * 3);
+    const hazePositions = new Float32Array(count * 3);
     const heights = new Float32Array(count);
     const delays = new Float32Array(count);
     const sizes = new Float32Array(count);
@@ -446,6 +517,11 @@ export class TreeBuilder {
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
 
+      const [hx, hy, hz] = createHazeCloudPosition();
+      hazePositions[i * 3] = hx;
+      hazePositions[i * 3 + 1] = hy;
+      hazePositions[i * 3 + 2] = hz;
+
       heights[i] = t;
       delays[i] = Math.random() * 0.3;
 
@@ -457,6 +533,7 @@ export class TreeBuilder {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('aHazePos', new THREE.BufferAttribute(hazePositions, 3));
     geometry.setAttribute('aHeight', new THREE.BufferAttribute(heights, 1));
     geometry.setAttribute('aDelay', new THREE.BufferAttribute(delays, 1));
     geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
@@ -479,6 +556,7 @@ export class TreeBuilder {
   _buildRibbonParticles() {
     const count = this.ribbonCount;
     const positions = new Float32Array(count * 3);
+    const hazePositions = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
     const phases = new Float32Array(count);
     const heights = new Float32Array(count);
@@ -497,7 +575,7 @@ export class TreeBuilder {
 
       // 丝带横截面呈柔和星尘带分布：中轴密集闪亮，边缘轻柔弥散
       const spread = (Math.random() + Math.random() + Math.random()) / 1.5 - 1.0;
-      const halfWidth = (0.22 - 0.1 * t);
+      const halfWidth = 0.22 - 0.1 * t;
       const bandOffset = spread * halfWidth;
 
       // 纯平滑圆锥包络半径（略大于树枝最外端 1.045，正面全程连贯不被截断，绝无突然凸起！）
@@ -510,6 +588,11 @@ export class TreeBuilder {
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
 
+      const [hx, hy, hz] = createHazeCloudPosition();
+      hazePositions[i * 3] = hx;
+      hazePositions[i * 3 + 1] = hy;
+      hazePositions[i * 3 + 2] = hz;
+
       const centerFactor = Math.max(0, 1.0 - Math.abs(spread));
       centers[i] = centerFactor;
       sizes[i] = 0.34 + centerFactor * 0.42 + Math.random() * 0.32;
@@ -519,6 +602,7 @@ export class TreeBuilder {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('aHazePos', new THREE.BufferAttribute(hazePositions, 3));
     geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
     geometry.setAttribute('aHeight', new THREE.BufferAttribute(heights, 1));
@@ -538,27 +622,39 @@ export class TreeBuilder {
   }
 
   /**
-   * 分别控制螺旋金带与圣诞树碎钻本体自上而下显现的进度 [0, 1]
+   * 分别控制：爆开扩散（burst）、粒子雾霾显现（hazeAlpha）、灯带由上往下凝聚（ribbonGather）、剩余粒子环绕成树（treeGather）
    */
-  setIntroProgress(ribbonReveal, treeReveal) {
-    const rr = Math.min(1, Math.max(0, ribbonReveal));
-    const tr = Math.min(1, Math.max(0, treeReveal));
-    this.ribbonUniforms.uRibbonReveal.value = rr;
-    this.treeUniforms.uTreeReveal.value = tr;
-    this.sparkleUniforms.uTreeReveal.value = tr;
+  setIntroProgress(burst, hazeAlpha, ribbonGather, treeGather) {
+    const b = Math.min(1, Math.max(0, burst));
+    const ha = Math.min(1, Math.max(0, hazeAlpha));
+    const rg = Math.min(1, Math.max(0, ribbonGather));
+    const tg = Math.min(1, Math.max(0, treeGather));
 
-    this.treeMesh.visible = tr > 0.001;
-    this.sparkleMesh.visible = tr > 0.001;
-    this.ribbonMesh.visible = this.ribbonEnabled && rr > 0.001;
-    // 开场未显现树身期间关闭树芯隐形遮挡锥；树身显现后开启以遮挡背面丝带
-    this.depthCone.visible = tr >= 0.72;
+    this.treeUniforms.uBurst.value = b;
+    this.treeUniforms.uHazeAlpha.value = ha;
+    this.treeUniforms.uTreeGather.value = tg;
+
+    this.sparkleUniforms.uBurst.value = b;
+    this.sparkleUniforms.uHazeAlpha.value = ha;
+    this.sparkleUniforms.uTreeGather.value = tg;
+
+    this.ribbonUniforms.uBurst.value = b;
+    this.ribbonUniforms.uHazeAlpha.value = ha;
+    this.ribbonUniforms.uRibbonGather.value = rg;
+
+    const showParticles = b > 0.002 && ha > 0.002;
+    this.treeMesh.visible = showParticles;
+    this.sparkleMesh.visible = showParticles;
+    this.ribbonMesh.visible = this.ribbonEnabled && showParticles;
+    // 粒子雾霾悬停与环绕阶段关闭树芯隐形遮挡锥；圣诞树凝实后开启遮挡背面丝带
+    this.depthCone.visible = tg >= 0.72;
   }
 
   /**
-   * 兼容快捷入口：同步设置灯带与树体进度 [0, 1]
+   * 兼容快捷入口：同步设置所有开场阶段进度 [0, 1]
    */
   setAssemble(value) {
-    this.setIntroProgress(value, value);
+    this.setIntroProgress(value, value, value, value);
   }
 
   /**
@@ -582,7 +678,9 @@ export class TreeBuilder {
 
   setRibbonVisible(visible) {
     this.ribbonEnabled = Boolean(visible);
-    this.ribbonMesh.visible = this.ribbonEnabled && this.ribbonUniforms.uRibbonReveal.value > 0.001;
+    const showParticles =
+      this.ribbonUniforms.uBurst.value > 0.002 && this.ribbonUniforms.uHazeAlpha.value > 0.002;
+    this.ribbonMesh.visible = this.ribbonEnabled && showParticles;
   }
 
   setPixelRatio(ratio) {

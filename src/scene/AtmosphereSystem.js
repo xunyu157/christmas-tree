@@ -12,14 +12,18 @@ const STAR_VERTEX_SHADER = /* glsl */ `
   uniform float uTime;
   uniform float uPixelRatio;
   uniform float uSizeScale;
+  uniform float uStarCascadeY;
+  uniform float uStarCascadeSoft;
 
   varying float vAlpha;
   varying vec3 vColor;
+  varying float vStarMask;
 
   void main() {
     float twinkle = 0.5 + 0.5 * sin(uTime * 1.9 + aPhase);
     vAlpha = mix(0.24, 0.96, pow(twinkle, 1.8));
     vColor = aColor;
+    vStarMask = smoothstep(uStarCascadeY - uStarCascadeSoft, uStarCascadeY + uStarCascadeSoft, position.y);
 
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
@@ -29,13 +33,15 @@ const STAR_VERTEX_SHADER = /* glsl */ `
 
 const STAR_FRAGMENT_SHADER = /* glsl */ `
   uniform sampler2D uMap;
+  uniform float uReveal;
   varying float vAlpha;
   varying vec3 vColor;
+  varying float vStarMask;
 
   void main() {
     vec4 tex = texture2D(uMap, gl_PointCoord);
     if (tex.a < 0.02) discard;
-    gl_FragColor = vec4(vColor, tex.a * vAlpha);
+    gl_FragColor = vec4(vColor, tex.a * vAlpha * uReveal * vStarMask);
   }
 `;
 
@@ -55,12 +61,18 @@ function pickStarColor(out, idxOffset = 0) {
 export class AtmosphereSystem {
   constructor(dotTexture, sparkleTexture, isMobile = false) {
     this.group = new THREE.Group();
+    this.starsEnabled = true;
+    this.snowEnabled = true;
+    this.reveal = 1.0;
 
     this.starUniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
       uMap: { value: sparkleTexture },
-      uSizeScale: { value: 340.0 }
+      uSizeScale: { value: 340.0 },
+      uReveal: { value: 1.0 },
+      uStarCascadeY: { value: -60.0 },
+      uStarCascadeSoft: { value: 28.0 }
     };
 
     this.starsGroup = new THREE.Group();
@@ -116,7 +128,10 @@ export class AtmosphereSystem {
         uTime: this.starUniforms.uTime,
         uPixelRatio: this.starUniforms.uPixelRatio,
         uMap: { value: dotTexture },
-        uSizeScale: this.starUniforms.uSizeScale
+        uSizeScale: this.starUniforms.uSizeScale,
+        uReveal: this.starUniforms.uReveal,
+        uStarCascadeY: this.starUniforms.uStarCascadeY,
+        uStarCascadeSoft: this.starUniforms.uStarCascadeSoft
       },
       vertexShader: STAR_VERTEX_SHADER,
       fragmentShader: STAR_FRAGMENT_SHADER,
@@ -180,7 +195,10 @@ export class AtmosphereSystem {
         uTime: this.starUniforms.uTime,
         uPixelRatio: this.starUniforms.uPixelRatio,
         uMap: { value: dotTexture },
-        uSizeScale: this.starUniforms.uSizeScale
+        uSizeScale: this.starUniforms.uSizeScale,
+        uReveal: this.starUniforms.uReveal,
+        uStarCascadeY: this.starUniforms.uStarCascadeY,
+        uStarCascadeSoft: this.starUniforms.uStarCascadeSoft
       },
       vertexShader: STAR_VERTEX_SHADER,
       fragmentShader: STAR_FRAGMENT_SHADER,
@@ -260,7 +278,7 @@ export class AtmosphereSystem {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-    const material = new THREE.PointsMaterial({
+    this.snowMat = new THREE.PointsMaterial({
       size: 0.14,
       map: dotTexture,
       color: new THREE.Color('#eef6ff'),
@@ -270,15 +288,33 @@ export class AtmosphereSystem {
       blending: THREE.AdditiveBlending
     });
 
-    return new THREE.Points(geometry, material);
+    return new THREE.Points(geometry, this.snowMat);
+  }
+
+  setReveal(starProgress, snowProgress = starProgress) {
+    const sp = THREE.MathUtils.clamp(starProgress, 0, 1);
+    const starEase = sp * sp * (3 - 2 * sp);
+    const snp = THREE.MathUtils.clamp(snowProgress, 0, 1);
+    const snowEase = snp * snp * (3 - 2 * snp);
+
+    this.reveal = starEase;
+    this.starUniforms.uReveal.value = starEase;
+    this.starUniforms.uStarCascadeY.value = THREE.MathUtils.lerp(125.0, -55.0, starEase);
+    if (this.snowMat) {
+      this.snowMat.opacity = 0.72 * snowEase;
+    }
+    this.starsGroup.visible = this.starsEnabled && starEase > 0.002;
+    this.snowMesh.visible = this.snowEnabled && snowEase > 0.002;
   }
 
   setStarsVisible(visible) {
-    this.starsGroup.visible = visible;
+    this.starsEnabled = Boolean(visible);
+    this.starsGroup.visible = this.starsEnabled && this.reveal > 0.002;
   }
 
   setSnowVisible(visible) {
-    this.snowMesh.visible = visible;
+    this.snowEnabled = Boolean(visible);
+    this.snowMesh.visible = this.snowEnabled && this.reveal > 0.002;
   }
 
   setPixelRatio(ratio) {

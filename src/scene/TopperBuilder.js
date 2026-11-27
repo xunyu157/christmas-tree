@@ -1,8 +1,8 @@
 /**
  * 树顶发光粒子装饰构建器
  * --------------------------------------------------
- * 支持 3 种精致 3D 粒子树顶造型一键切换：
- * 1. 发光粒子爱心（heart，还原示例图同款粉色星芒爱心）
+ * 支持 3 种精致 3D 星尘粒子树顶造型一键切换：
+ * 1. 细闪碎钻粒子爱心（heart）
  * 2. 经典立体五角星（star）
  * 3. 冰雪六角雪花（snowflake）
  */
@@ -15,20 +15,51 @@ const TOPPER_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
   attribute float aPhase;
   attribute float aCore;
+  attribute float aSparkle;
 
   uniform float uTime;
   uniform float uPixelRatio;
+  uniform float uReveal;
+  uniform float uBeat;
 
   varying float vCore;
   varying float vTwinkle;
+  varying float vSparkle;
+  varying float vReveal;
 
   void main() {
     vCore = aCore;
-    vTwinkle = 0.76 + 0.28 * sin(uTime * 3.2 + aPhase);
+    vSparkle = aSparkle;
 
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    float ease = 1.0 - pow(1.0 - clamp(uReveal, 0.0, 1.0), 3.0);
+    vReveal = ease;
+
+    float speed = aSparkle > 0.5 ? 3.8 : 2.3;
+    float wave = 0.5 + 0.5 * sin(uTime * speed + aPhase);
+    vTwinkle = (aSparkle > 0.5 ? mix(0.68, 1.28, pow(wave, 1.8)) : mix(0.78, 1.12, wave)) + uBeat * (aSparkle > 0.5 ? 0.26 : 0.12);
+
+    vec3 pos = position;
+    if (uReveal < 0.999) {
+      float swirl = (1.0 - ease) * 2.2;
+      float cs = cos(swirl);
+      float sn = sin(swirl);
+      vec2 radial = length(position.xy) > 0.001 ? normalize(position.xy) : vec2(0.0, 1.0);
+      vec3 drifted = vec3(
+        position.x + radial.x * 0.95 * (1.0 - ease),
+        position.y + radial.y * 0.95 * (1.0 - ease) + sin(aPhase) * 0.22 * (1.0 - ease),
+        position.z
+      );
+      pos = vec3(
+        drifted.x * cs - drifted.z * sn,
+        drifted.y,
+        drifted.x * sn + drifted.z * cs
+      );
+    }
+
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * uPixelRatio * (135.0 / max(-mvPosition.z, 1.0));
+    float rawSize = aSize * (0.86 + 0.24 * vTwinkle) * (1.0 + uBeat * 0.14) * mix(0.45, 1.0, ease) * uPixelRatio * (78.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = clamp(rawSize, 1.4 * uPixelRatio, 8.5 * uPixelRatio);
   }
 `;
 
@@ -37,27 +68,36 @@ const TOPPER_FRAGMENT_SHADER = /* glsl */ `
 
   varying float vCore;
   varying float vTwinkle;
+  varying float vSparkle;
+  varying float vReveal;
 
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
     float dist = length(uv);
-    if (dist > 0.46) discard;
+    if (dist > 0.5) discard;
 
-    float rim = smoothstep(0.46, 0.06, dist);
-    // 外沿保持浓郁饱满的粉色/主题色，仅正中心过渡为柔白星芯
-    vec3 color = mix(uTopperColor, vec3(1.0, 0.96, 0.99), pow(clamp(vCore, 0.0, 1.0), 1.8) * 0.82);
-    gl_FragColor = vec4(color * (0.55 + 0.58 * rim) * vTwinkle, 1.0);
+    float core = exp(-dist * 9.5);
+    float halo = pow(smoothstep(0.5, 0.0, dist), 2.15);
+    float crossH = exp(-abs(uv.y) * 22.0) * exp(-abs(uv.x) * 5.0);
+    float crossV = exp(-abs(uv.x) * 22.0) * exp(-abs(uv.y) * 5.0);
+    float starGlint = (crossH + crossV) * 0.55 * vSparkle;
+
+    float alpha = clamp(halo * 0.66 + core * 0.42 + starGlint * 0.55, 0.0, 1.0) * vReveal;
+    vec3 baseTint = mix(uTopperColor, vec3(1.0, 0.90, 0.96), vCore * 0.34 + core * 0.32);
+    vec3 finalColor = mix(baseTint, vec3(1.0, 0.98, 1.0), clamp(core * 0.42 + starGlint * 0.85, 0.0, 0.85));
+    gl_FragColor = vec4(finalColor * (0.64 + 0.56 * core + starGlint * 0.5) * vTwinkle, alpha * (0.52 + 0.38 * vTwinkle));
   }
 `;
 
 /**
- * 3D 立体爱心点云（经典心形参数方程 + 饱满厚度）
+ * 3D 立体爱心点云（轻盈碎钻轮廓 + 柔和内部星云 + 微飘外缘星尘）
  */
-function buildHeartGeometry(count = 2400) {
+function buildHeartGeometry(count = 2600) {
   const positions = new Float32Array(count * 3);
   const sizes = new Float32Array(count);
   const phases = new Float32Array(count);
   const cores = new Float32Array(count);
+  const sparkles = new Float32Array(count);
 
   const scale = 0.044;
 
@@ -70,13 +110,23 @@ function buildHeartGeometry(count = 2400) {
       2 * Math.cos(3 * u) -
       Math.cos(4 * u);
 
-    // 62% 强化轮廓线条（让爱心双弧与尖角一眼清晰），38% 填充内部柔光核心
-    const fill = Math.random() < 0.62 ? 0.9 + 0.11 * Math.random() : Math.pow(Math.random(), 0.58);
+    const pick = Math.random();
+    const isHalo = pick >= 0.9;
+    let fill;
+    if (pick < 0.45) {
+      // 45% 精致心形外轮廓线条
+      fill = 0.88 + 0.14 * Math.random();
+    } else if (pick < 0.9) {
+      // 45% 柔和均匀内部体积填充
+      fill = Math.pow(Math.random(), 0.62) * 0.92;
+    } else {
+      // 10% 外缘轻盈逸散微星尘
+      fill = 1.02 + Math.random() * 0.14;
+    }
+
     const x = rawX * scale * fill;
     const y = (rawY + 1.5) * scale * fill;
-
-    // 适度控制厚度，搭配正面朝向相机，任何旋转角度都是标准饱满爱心
-    const thickness = Math.sqrt(Math.max(0, 1 - fill * fill * 0.85)) * 0.22;
+    const thickness = Math.sqrt(Math.max(0, 1 - Math.min(1, fill) * Math.min(1, fill) * 0.85)) * 0.22;
     const z = (Math.random() - 0.5) * 2 * thickness;
 
     positions[i * 3] = x;
@@ -85,11 +135,13 @@ function buildHeartGeometry(count = 2400) {
 
     const distToCenter = Math.hypot(x, y - 0.08);
     cores[i] = Math.max(0, 1 - distToCenter / 0.62);
-    sizes[i] = 0.52 + Math.random() * 0.72 + cores[i] * 0.55;
+    const baseSize = 0.26 + Math.random() * 0.34 + (isHalo ? -0.06 : cores[i] * 0.12);
+    sizes[i] = Math.max(0.18, baseSize);
     phases[i] = Math.random() * Math.PI * 2;
+    sparkles[i] = Math.random() < 0.16 ? 1.0 : 0.0;
   }
 
-  return makeGeometry(positions, sizes, phases, cores);
+  return makeGeometry(positions, sizes, phases, cores, sparkles);
 }
 
 /**
@@ -100,6 +152,7 @@ function buildStarGeometry(count = 2200) {
   const sizes = new Float32Array(count);
   const phases = new Float32Array(count);
   const cores = new Float32Array(count);
+  const sparkles = new Float32Array(count);
 
   const outerR = 0.78;
   const innerR = 0.34;
@@ -115,7 +168,6 @@ function buildStarGeometry(count = 2200) {
     const v1 = vertices[seg];
     const v2 = vertices[(seg + 1) % 10];
 
-    // 在由中心和每条边组成的三角形内均匀采样（轮廓更密）
     const edgeT = Math.random();
     const isOutline = Math.random() < 0.42;
     const radial = isOutline ? 0.92 + Math.random() * 0.09 : Math.pow(Math.random(), 0.52);
@@ -132,11 +184,12 @@ function buildStarGeometry(count = 2200) {
     positions[i * 3 + 2] = z;
 
     cores[i] = Math.max(0, 1 - radial);
-    sizes[i] = 0.5 + Math.random() * 0.75 + cores[i] * 0.5;
+    sizes[i] = 0.24 + Math.random() * 0.34 + cores[i] * 0.12;
     phases[i] = Math.random() * Math.PI * 2;
+    sparkles[i] = Math.random() < 0.16 ? 1.0 : 0.0;
   }
 
-  return makeGeometry(positions, sizes, phases, cores);
+  return makeGeometry(positions, sizes, phases, cores, sparkles);
 }
 
 /**
@@ -147,6 +200,7 @@ function buildSnowflakeGeometry(count = 2200) {
   const sizes = new Float32Array(count);
   const phases = new Float32Array(count);
   const cores = new Float32Array(count);
+  const sparkles = new Float32Array(count);
 
   const armLen = 0.78;
 
@@ -158,13 +212,11 @@ function buildSnowflakeGeometry(count = 2200) {
     let y = 0;
 
     if (mode < 0.52) {
-      // 主冰晶轴
       const d = Math.random() * armLen;
       const spread = (Math.random() - 0.5) * 0.07;
       x = Math.cos(baseAngle) * d - Math.sin(baseAngle) * spread;
       y = Math.sin(baseAngle) * d + Math.cos(baseAngle) * spread;
     } else if (mode < 0.86) {
-      // 两侧对称分支羽毛
       const branchBase = (0.35 + Math.floor(Math.random() * 2) * 0.3) * armLen;
       const side = Math.random() < 0.5 ? 1 : -1;
       const branchAngle = baseAngle + side * (Math.PI / 3);
@@ -172,7 +224,6 @@ function buildSnowflakeGeometry(count = 2200) {
       x = Math.cos(baseAngle) * branchBase + Math.cos(branchAngle) * bd;
       y = Math.sin(baseAngle) * branchBase + Math.sin(branchAngle) * bd;
     } else {
-      // 中心六边晶环
       const nextAngle = baseAngle + Math.PI / 3;
       const s = Math.random();
       const ringR = 0.28;
@@ -187,19 +238,21 @@ function buildSnowflakeGeometry(count = 2200) {
 
     const rNorm = Math.min(1, Math.hypot(x, y) / armLen);
     cores[i] = 1 - rNorm;
-    sizes[i] = 0.48 + Math.random() * 0.68 + cores[i] * 0.5;
+    sizes[i] = 0.24 + Math.random() * 0.34 + cores[i] * 0.12;
     phases[i] = Math.random() * Math.PI * 2;
+    sparkles[i] = Math.random() < 0.16 ? 1.0 : 0.0;
   }
 
-  return makeGeometry(positions, sizes, phases, cores);
+  return makeGeometry(positions, sizes, phases, cores, sparkles);
 }
 
-function makeGeometry(positions, sizes, phases, cores) {
+function makeGeometry(positions, sizes, phases, cores, sparkles) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
   geometry.setAttribute('aCore', new THREE.BufferAttribute(cores, 1));
+  geometry.setAttribute('aSparkle', new THREE.BufferAttribute(sparkles, 1));
   return geometry;
 }
 
@@ -212,6 +265,8 @@ export class TopperBuilder {
     this.uniforms = {
       uTime: { value: 0 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      uReveal: { value: 1.0 },
+      uBeat: { value: 0 },
       uTopperColor: { value: new THREE.Color(topperColor) }
     };
 
@@ -219,9 +274,11 @@ export class TopperBuilder {
       uniforms: this.uniforms,
       vertexShader: TOPPER_VERTEX_SHADER,
       fragmentShader: TOPPER_FRAGMENT_SHADER,
-      transparent: false,
+      transparent: true,
       depthTest: true,
-      depthWrite: true
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      fog: false
     });
 
     this.geometries = {
@@ -232,37 +289,40 @@ export class TopperBuilder {
 
     this.currentType = this.geometries[topperType] ? topperType : 'heart';
     this.pointsMesh = new THREE.Points(this.geometries[this.currentType], this.material);
+    this.pointsMesh.renderOrder = 5;
     this.group.add(this.pointsMesh);
 
-    // 中心精致星芒光斑（控制尺寸与透明度，既闪耀又不糊掉爱心轮廓）
-    this.flareMat = new THREE.SpriteMaterial({
-      map: sparkleTexture,
-      color: new THREE.Color('#ffffff'),
-      transparent: true,
-      opacity: 0.76,
-      blending: THREE.AdditiveBlending,
-      depthTest: false,
-      depthWrite: false
-    });
-    this.coreFlare = new THREE.Sprite(this.flareMat);
-    this.coreFlare.scale.set(1.55, 1.55, 1);
-    this.coreFlare.position.set(0, 0.06, 0.12);
-    this.group.add(this.coreFlare);
-
-    // 柔和外圈彩色光晕
+    // 柔和外圈彩色光晕（垫在粒子后方，烘托梦幻星云通透感）
     this.haloMat = new THREE.SpriteMaterial({
       map: sparkleTexture,
       color: new THREE.Color(topperColor),
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.22,
       blending: THREE.AdditiveBlending,
-      depthTest: false,
+      depthTest: true,
       depthWrite: false
     });
     this.haloSprite = new THREE.Sprite(this.haloMat);
-    this.haloSprite.scale.set(2.35, 2.35, 1);
-    this.haloSprite.position.set(0, 0.06, 0.08);
+    this.haloSprite.scale.set(2.0, 2.0, 1);
+    this.haloSprite.position.set(0, 0.04, -0.06);
+    this.haloSprite.renderOrder = 4;
     this.group.add(this.haloSprite);
+
+    // 克制细腻的中心暖星芒光斑（不再用硕大白十字挡住爱心质感）
+    this.flareMat = new THREE.SpriteMaterial({
+      map: sparkleTexture,
+      color: new THREE.Color('#fff5fa').lerp(new THREE.Color(topperColor), 0.2),
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending,
+      depthTest: true,
+      depthWrite: false
+    });
+    this.coreFlare = new THREE.Sprite(this.flareMat);
+    this.coreFlare.scale.set(0.92, 0.92, 1);
+    this.coreFlare.position.set(0, 0.04, 0.14);
+    this.coreFlare.renderOrder = 6;
+    this.group.add(this.coreFlare);
   }
 
   setType(type) {
@@ -274,6 +334,7 @@ export class TopperBuilder {
   setColor(hex) {
     this.uniforms.uTopperColor.value.set(hex);
     this.haloMat.color.set(hex);
+    this.flareMat.color.set('#fff5fa').lerp(new THREE.Color(hex), 0.2);
   }
 
   setPixelRatio(ratio) {
@@ -281,39 +342,33 @@ export class TopperBuilder {
   }
 
   /**
-   * 设置开场树顶弹出揭示进度 [0, 1]（带弹性回弹与点亮瞬间星芒爆发）
+   * 设置开场树顶粒子由星尘旋涡细腻凝结的显现进度 [0, 1]（告别生硬实体弹跳缩放）
    */
   setReveal(progress) {
     const t = Math.min(1, Math.max(0, progress));
+    const ease = 1 - Math.pow(1 - t, 3);
     this.reveal = t;
-    if (t <= 0.001) {
-      this.group.visible = false;
-      return;
-    }
-    this.group.visible = true;
-    const c1 = 1.70158;
-    const c3 = c1 + 1;
-    const s = 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-    this.group.scale.setScalar(Math.max(0.001, s));
+    this.uniforms.uReveal.value = t;
+    this.group.visible = t > 0.001;
+    this.group.scale.setScalar(1);
 
-    const fade = Math.min(1, t * 1.4);
-    this.flareMat.opacity = 0.76 * fade;
-    this.haloMat.opacity = 0.28 * fade;
+    this.flareMat.opacity = 0.42 * ease * ease;
+    this.haloMat.opacity = 0.22 * ease;
   }
 
   update(elapsed, camera = null, beat = 0) {
     this.uniforms.uTime.value = elapsed;
+    this.uniforms.uBeat.value = beat;
 
-    // 树顶装饰优雅轻盈漂浮；始终正面朝向相机并带轻微摇曳，避免镜头转到侧面时爱心变成竖条椭圆！
+    // 树顶装饰优雅轻盈漂浮；始终正面朝向相机并带轻微摇曳，避免镜头转到侧面时爱心变成竖条椭圆
     this.group.position.y = TOPPER_Y + Math.sin(elapsed * 1.6) * 0.06;
     const camYaw = camera ? Math.atan2(camera.position.x, camera.position.z) : 0;
-    this.pointsMesh.rotation.y = camYaw + Math.sin(elapsed * 1.1) * 0.2;
+    this.pointsMesh.rotation.y = camYaw + Math.sin(elapsed * 1.1) * 0.16;
 
-    // 核心星芒呼吸脉动 + 点亮瞬间星芒爆发 + 随八音盒节拍轻轻律动
-    const pulse = 1.0 + 0.09 * Math.sin(elapsed * 3.1);
-    const burst = 1.0 + 0.55 * Math.sin(this.reveal * Math.PI) * (this.reveal < 0.999 ? 1 : 0);
-    const beatBoost = 1.0 + beat * 0.22;
-    this.coreFlare.scale.set(1.55 * pulse * burst * beatBoost, 1.55 * pulse * burst * beatBoost, 1);
-    this.haloSprite.scale.set(2.35 * pulse * burst * beatBoost, 2.35 * pulse * burst * beatBoost, 1);
+    // 柔和核心星芒脉动 + 随八音盒节拍轻轻律动
+    const pulse = 1.0 + 0.08 * Math.sin(elapsed * 3.1);
+    const beatBoost = 1.0 + beat * 0.18;
+    this.coreFlare.scale.set(0.92 * pulse * beatBoost, 0.92 * pulse * beatBoost, 1);
+    this.haloSprite.scale.set(2.0 * pulse * beatBoost, 2.0 * pulse * beatBoost, 1);
   }
 }

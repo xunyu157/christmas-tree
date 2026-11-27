@@ -524,6 +524,14 @@ export class WinterVillage {
     this.cottageFootprints = [];
     this.mountainFootprints = [];
     this.cloudSprites = [];
+    this.lampEntries = [];
+    this.reveal = 1.0;
+    this.cascadeUniforms = {
+      uCascadeActive: { value: 0 },
+      uCascadeY: { value: -30 },
+      uCascadeSoft: { value: 3.8 },
+      uCascadeEdge: { value: 0 }
+    };
 
     this._buildSnowGround(dotTexture);
     this._buildMountainRanges();
@@ -538,6 +546,53 @@ export class WinterVillage {
     this.setColors(colors);
   }
 
+  /**
+   * 注入按世界高度自上而下倾泻点亮的统一着色器（在雾效之后压暗未照亮区域，保证纯黑不漏蓝雾）
+   */
+  _attachCascadeShader(material) {
+    material.customProgramCacheKey = () => 'winter-topdown-cascade';
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uCascadeActive = this.cascadeUniforms.uCascadeActive;
+      shader.uniforms.uCascadeY = this.cascadeUniforms.uCascadeY;
+      shader.uniforms.uCascadeSoft = this.cascadeUniforms.uCascadeSoft;
+      shader.uniforms.uCascadeEdge = this.cascadeUniforms.uCascadeEdge;
+
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying float vCascadeY;')
+        .replace(
+          '#include <project_vertex>',
+          `#include <project_vertex>
+vec4 cascadeWorldPos = vec4( transformed, 1.0 );
+#ifdef USE_INSTANCING
+  cascadeWorldPos = instanceMatrix * cascadeWorldPos;
+#endif
+cascadeWorldPos = modelMatrix * cascadeWorldPos;
+vCascadeY = cascadeWorldPos.y;`
+        );
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+uniform float uCascadeActive;
+uniform float uCascadeY;
+uniform float uCascadeSoft;
+uniform float uCascadeEdge;
+varying float vCascadeY;`
+        )
+        .replace(
+          '#include <dithering_fragment>',
+          `if ( uCascadeActive > 0.5 ) {
+  float cascadeMask = smoothstep( uCascadeY - uCascadeSoft, uCascadeY + uCascadeSoft, vCascadeY );
+  float edgeBand = exp( -pow( ( vCascadeY - uCascadeY ) / max( uCascadeSoft * 0.55, 0.25 ), 2.0 ) ) * uCascadeEdge;
+  gl_FragColor.rgb = gl_FragColor.rgb * cascadeMask + vec3( 0.62, 0.76, 1.0 ) * edgeBand * 0.18;
+}
+#include <dithering_fragment>`
+        );
+    };
+    return material;
+  }
+
   _buildSnowGround(dotTexture) {
     const geo = new THREE.PlaneGeometry(196, 196, 84, 84);
     geo.rotateX(-Math.PI / 2);
@@ -550,13 +605,15 @@ export class WinterVillage {
     }
     geo.computeVertexNormals();
 
-    this.snowMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#97a8cc'),
-      emissive: new THREE.Color('#131b30'),
-      emissiveIntensity: 0.36,
-      roughness: 0.92,
-      metalness: 0.04
-    });
+    this.snowMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#97a8cc'),
+        emissive: new THREE.Color('#131b30'),
+        emissiveIntensity: 0.36,
+        roughness: 0.92,
+        metalness: 0.04
+      })
+    );
 
     this.snowGround = new THREE.Mesh(geo, this.snowMat);
     this.group.add(this.snowGround);
@@ -592,14 +649,16 @@ export class WinterVillage {
     this.mountainGroup = new THREE.Group();
     this.group.add(this.mountainGroup);
 
-    const mountainMat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      emissive: new THREE.Color('#0c162b'),
-      emissiveIntensity: 0.24,
-      roughness: 0.92,
-      metalness: 0.04,
-      flatShading: true
-    });
+    const mountainMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        emissive: new THREE.Color('#0c162b'),
+        emissiveIntensity: 0.24,
+        roughness: 0.92,
+        metalness: 0.04,
+        flatShading: true
+      })
+    );
 
     // 13 座彼此错落分离、山脊崎岖的独立 3D 山体（山间留出开阔星空山口与明月走廊）
     const massifSpecs = [
@@ -648,17 +707,21 @@ export class WinterVillage {
     const fenceRadius = 14.2;
     const postCount = 44;
 
-    const woodMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#4a3328'),
-      roughness: 0.88,
-      metalness: 0.05
-    });
-    const capSnowMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#d2e2f7'),
-      emissive: new THREE.Color('#16223b'),
-      emissiveIntensity: 0.25,
-      roughness: 0.86
-    });
+    const woodMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#4a3328'),
+        roughness: 0.88,
+        metalness: 0.05
+      })
+    );
+    const capSnowMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#d2e2f7'),
+        emissive: new THREE.Color('#16223b'),
+        emissiveIntensity: 0.25,
+        roughness: 0.86
+      })
+    );
 
     const postGeo = new THREE.CylinderGeometry(0.11, 0.13, 1.28, 10);
     const snowCapGeo = new THREE.SphereGeometry(0.145, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62);
@@ -722,26 +785,34 @@ export class WinterVillage {
   }
 
   _buildDistantCottages() {
-    const wallMatA = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#2b3348'),
-      roughness: 0.88,
-      metalness: 0.06
-    });
-    const wallMatB = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#3a3146'),
-      roughness: 0.88,
-      metalness: 0.06
-    });
-    const roofSnowMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#cadbf2'),
-      emissive: new THREE.Color('#132036'),
-      emissiveIntensity: 0.28,
-      roughness: 0.85
-    });
-    const chimneyMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#393f54'),
-      roughness: 0.9
-    });
+    const wallMatA = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#2b3348'),
+        roughness: 0.88,
+        metalness: 0.06
+      })
+    );
+    const wallMatB = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#3a3146'),
+        roughness: 0.88,
+        metalness: 0.06
+      })
+    );
+    const roofSnowMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#cadbf2'),
+        emissive: new THREE.Color('#132036'),
+        emissiveIntensity: 0.28,
+        roughness: 0.85
+      })
+    );
+    const chimneyMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#393f54'),
+        roughness: 0.9
+      })
+    );
 
     // 10 座暖窗积雪木屋自然分布在 360° 雪谷林间，任意视角旋转都不再空旷
     const cottageSpecs = [
@@ -806,13 +877,21 @@ export class WinterVillage {
         z: cz - lx * sinR + lz * cosR
       });
 
-      const winMat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color('#ffd991'),
-        emissive: new THREE.Color('#ffbe52'),
-        emissiveIntensity: 0.82,
-        roughness: 0.3
+      const winMat = this._attachCascadeShader(
+        new THREE.MeshStandardMaterial({
+          color: new THREE.Color('#ffd991'),
+          emissive: new THREE.Color('#ffbe52'),
+          emissiveIntensity: 0.82,
+          roughness: 0.3
+        })
+      );
+      this.windowEntries.push({
+        mat: winMat,
+        phase: idx * 1.1,
+        delay: (((idx * 37) % 10) / 10) * 0.48,
+        reveal: 1.0,
+        baseColor: new THREE.Color('#ffd991')
       });
-      this.windowEntries.push({ mat: winMat, phase: idx * 1.1 });
 
       [-cfg.w * 0.23, cfg.w * 0.23].forEach((wx) => {
         const win = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.36), winMat);
@@ -883,13 +962,15 @@ export class WinterVillage {
 
     const count = placements.length;
     const snowyPineTex = createSnowyPineTexture();
-    const pineMat = new THREE.MeshStandardMaterial({
-      map: snowyPineTex,
-      roughness: 0.88,
-      metalness: 0.04,
-      emissive: new THREE.Color('#132136'),
-      emissiveIntensity: 0.28
-    });
+    const pineMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        map: snowyPineTex,
+        roughness: 0.88,
+        metalness: 0.04,
+        emissive: new THREE.Color('#132136'),
+        emissiveIntensity: 0.28
+      })
+    );
 
     // 4 层垂坠花瓣松枝错落叠起，每层旋转错开相位，让稀疏碎雪从树底到树梢自然散落（仅 4 次绘制调用）
     const tierConfigs = [
@@ -945,7 +1026,7 @@ export class WinterVillage {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-    const mat = new THREE.PointsMaterial({
+    this.smokeMat = new THREE.PointsMaterial({
       size: 0.4,
       map: dotTexture,
       color: new THREE.Color('#a8bede'),
@@ -954,7 +1035,7 @@ export class WinterVillage {
       depthWrite: false
     });
 
-    this.smokePoints = new THREE.Points(geo, mat);
+    this.smokePoints = new THREE.Points(geo, this.smokeMat);
     this.group.add(this.smokePoints);
   }
 
@@ -963,53 +1044,70 @@ export class WinterVillage {
     const lampCount = 6;
     const lampRadius = 10.2;
 
-    const ironMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#1f2638'),
-      roughness: 0.65,
-      metalness: 0.5
-    });
-    const redRibbonMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#c8374b'),
-      emissive: new THREE.Color('#420b14'),
-      emissiveIntensity: 0.35,
-      roughness: 0.5
-    });
-    const lampSnowMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#dce9fa'),
-      emissive: new THREE.Color('#1a2640'),
-      emissiveIntensity: 0.28,
-      roughness: 0.8
-    });
-    const glassBulbMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#fff2bf'),
-      emissive: new THREE.Color('#ffd369'),
-      emissiveIntensity: 1.35,
-      roughness: 0.15
-    });
+    const ironMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#1f2638'),
+        roughness: 0.65,
+        metalness: 0.5
+      })
+    );
+    const redRibbonMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#c8374b'),
+        emissive: new THREE.Color('#420b14'),
+        emissiveIntensity: 0.35,
+        roughness: 0.5
+      })
+    );
+    const lampSnowMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#dce9fa'),
+        emissive: new THREE.Color('#1a2640'),
+        emissiveIntensity: 0.28,
+        roughness: 0.8
+      })
+    );
 
     const glowTexture = createWarmGlowTexture();
-    const bulbHaloMat = new THREE.SpriteMaterial({
-      map: glowTexture,
-      color: new THREE.Color('#ffe08c'),
-      transparent: true,
-      opacity: 0.85,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    });
-    const groundPoolMat = new THREE.MeshBasicMaterial({
-      map: glowTexture,
-      color: new THREE.Color('#ffd980'),
-      transparent: true,
-      opacity: 0.65,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    });
 
     for (let i = 0; i < lampCount; i += 1) {
       const a = Math.PI / 6 + (i / lampCount) * Math.PI * 2;
       const lx = Math.cos(a) * lampRadius;
       const lz = Math.sin(a) * lampRadius;
       const gy = getTerrainHeight(lx, lz);
+
+      const bulbMat = this._attachCascadeShader(
+        new THREE.MeshStandardMaterial({
+          color: new THREE.Color('#fff2bf'),
+          emissive: new THREE.Color('#ffd369'),
+          emissiveIntensity: 1.35,
+          roughness: 0.15
+        })
+      );
+      const haloMat = new THREE.SpriteMaterial({
+        map: glowTexture,
+        color: new THREE.Color('#ffe08c'),
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const poolMat = new THREE.MeshBasicMaterial({
+        map: glowTexture,
+        color: new THREE.Color('#ffd980'),
+        transparent: true,
+        opacity: 0.65,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+
+      this.lampEntries.push({
+        bulbMat,
+        haloMat,
+        poolMat,
+        delay: ((lz + lampRadius) / (lampRadius * 2)) * 0.45,
+        baseColor: new THREE.Color('#fff2bf')
+      });
 
       const lamp = new THREE.Group();
       lamp.position.set(lx, gy, lz);
@@ -1030,7 +1128,7 @@ export class WinterVillage {
       collar.position.y = 2.72;
       lamp.add(collar);
 
-      const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.44, 12), glassBulbMat);
+      const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.44, 12), bulbMat);
       glass.position.y = 2.98;
       lamp.add(glass);
 
@@ -1046,12 +1144,12 @@ export class WinterVillage {
       snowCap.scale.set(1, 0.72, 1);
       lamp.add(snowCap);
 
-      const halo = new THREE.Sprite(bulbHaloMat);
+      const halo = new THREE.Sprite(haloMat);
       halo.position.y = 2.98;
       halo.scale.set(2.3, 2.3, 1);
       lamp.add(halo);
 
-      const pool = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4), groundPoolMat);
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4), poolMat);
       pool.rotation.x = -Math.PI / 2;
       pool.position.y = 0.04;
       lamp.add(pool);
@@ -1069,36 +1167,48 @@ export class WinterVillage {
     snowman.position.set(sx, sy, sz);
     snowman.rotation.y = -0.35;
 
-    const bodySnowMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#dce8f9'),
-      emissive: new THREE.Color('#1d2842'),
-      emissiveIntensity: 0.28,
-      roughness: 0.8
-    });
-    const hatMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#202534'),
-      roughness: 0.75
-    });
-    const scarfMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#cf344a'),
-      emissive: new THREE.Color('#3b0912'),
-      emissiveIntensity: 0.3,
-      roughness: 0.65
-    });
-    const coalMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#151822'),
-      roughness: 0.7
-    });
-    const carrotMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#f27d29'),
-      emissive: new THREE.Color('#3d1904'),
-      emissiveIntensity: 0.25,
-      roughness: 0.55
-    });
-    const twigMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color('#4a3222'),
-      roughness: 0.9
-    });
+    const bodySnowMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#dce8f9'),
+        emissive: new THREE.Color('#1d2842'),
+        emissiveIntensity: 0.28,
+        roughness: 0.8
+      })
+    );
+    const hatMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#202534'),
+        roughness: 0.75
+      })
+    );
+    const scarfMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#cf344a'),
+        emissive: new THREE.Color('#3b0912'),
+        emissiveIntensity: 0.3,
+        roughness: 0.65
+      })
+    );
+    const coalMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#151822'),
+        roughness: 0.7
+      })
+    );
+    const carrotMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#f27d29'),
+        emissive: new THREE.Color('#3d1904'),
+        emissiveIntensity: 0.25,
+        roughness: 0.55
+      })
+    );
+    const twigMat = this._attachCascadeShader(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#4a3222'),
+        roughness: 0.9
+      })
+    );
 
     const baseBall = new THREE.Mesh(new THREE.SphereGeometry(0.58, 22, 16), bodySnowMat);
     baseBall.position.y = 0.52;
@@ -1220,11 +1330,85 @@ export class WinterVillage {
         radius: c.r,
         baseY: c.y,
         speed: c.speed,
-        bobPhase: idx * 0.9
+        bobPhase: idx * 0.9,
+        baseOpacity: c.op
       };
       this.cloudSprites.push(sprite);
       this.group.add(sprite);
     });
+  }
+
+  setReveal(stateOrNumber) {
+    let active;
+    let cascadeY;
+    let edgeGlow;
+    let moonP;
+    let cloudP;
+    let cottageP;
+    let lampP;
+    let groundP;
+
+    if (typeof stateOrNumber === 'number') {
+      const n = THREE.MathUtils.clamp(stateOrNumber, 0, 1);
+      active = n < 0.999;
+      cascadeY = n >= 0.999 ? -30 : 30;
+      edgeGlow = 0;
+      moonP = n;
+      cloudP = n;
+      cottageP = n;
+      lampP = n;
+      groundP = n;
+    } else {
+      ({
+        active = false,
+        cascadeY = -30,
+        edgeGlow = 0,
+        moonP = 1,
+        cloudP = 1,
+        cottageP = 1,
+        lampP = 1,
+        groundP = 1
+      } = stateOrNumber);
+    }
+
+    this.cascadeUniforms.uCascadeActive.value = active ? 1 : 0;
+    this.cascadeUniforms.uCascadeY.value = cascadeY;
+    this.cascadeUniforms.uCascadeEdge.value = edgeGlow;
+
+    const moonEase = THREE.MathUtils.smoothstep(moonP, 0, 1);
+    const cloudEase = THREE.MathUtils.smoothstep(cloudP, 0, 1);
+    const groundEase = THREE.MathUtils.smoothstep(groundP, 0, 1);
+    this.reveal = groundEase;
+
+    if (this.moonMat) {
+      this.moonMat.opacity = 0.96 * moonEase;
+    }
+
+    for (let i = 0; i < this.cloudSprites.length; i += 1) {
+      const sprite = this.cloudSprites[i];
+      sprite.material.opacity = sprite.userData.baseOpacity * cloudEase;
+    }
+
+    for (let i = 0; i < this.windowEntries.length; i += 1) {
+      const entry = this.windowEntries[i];
+      const localWin = THREE.MathUtils.smoothstep(cottageP, entry.delay, entry.delay + 0.45);
+      entry.reveal = localWin;
+      entry.mat.color.copy(entry.baseColor).multiplyScalar(localWin);
+      entry.mat.emissiveIntensity = 0.82 * localWin;
+    }
+
+    this.smokeMat.opacity = 0.2 * THREE.MathUtils.smoothstep(cottageP, 0.35, 1.0);
+
+    for (let i = 0; i < this.lampEntries.length; i += 1) {
+      const lamp = this.lampEntries[i];
+      const localLamp = THREE.MathUtils.smoothstep(lampP, lamp.delay, lamp.delay + 0.45);
+      lamp.bulbMat.color.copy(lamp.baseColor).multiplyScalar(localLamp);
+      lamp.bulbMat.emissiveIntensity = 1.35 * localLamp;
+      lamp.haloMat.opacity = 0.85 * localLamp;
+      lamp.poolMat.opacity = 0.65 * localLamp;
+    }
+
+    this.glintMat.opacity = 0.38 * groundEase;
   }
 
   setColors(colors) {
@@ -1249,7 +1433,8 @@ export class WinterVillage {
 
     for (let i = 0; i < this.windowEntries.length; i += 1) {
       const entry = this.windowEntries[i];
-      entry.mat.emissiveIntensity = 0.78 + 0.14 * Math.sin(elapsed * 1.15 + entry.phase);
+      entry.mat.emissiveIntensity =
+        (0.78 + 0.14 * Math.sin(elapsed * 1.15 + entry.phase)) * entry.reveal;
     }
 
     const pos = this.smokePoints.geometry.attributes.position.array;
