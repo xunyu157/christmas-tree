@@ -75,7 +75,8 @@ export class GroundVortex {
       transparent: true,
       opacity: this.baseMistOpacity,
       blending: THREE.AdditiveBlending,
-      depthWrite: false
+      depthWrite: false,
+      fog: false
     });
     this.mistMesh = new THREE.Mesh(mistGeo, this.mistMat);
     this.mistMesh.rotation.x = -Math.PI / 2;

@@ -68,6 +68,7 @@ export class ControlPanel {
       fxInputs: {
         music: document.getElementById('fx-music'),
         rhythmLights: document.getElementById('fx-rhythmLights'),
+        winterVillage: document.getElementById('fx-winterVillage'),
         fireworks: document.getElementById('fx-fireworks'),
         ribbon: document.getElementById('fx-ribbon'),
         vortex: document.getElementById('fx-vortex'),
@@ -415,7 +416,7 @@ export class ControlPanel {
         ? `${senderText} 送你一棵专属圣诞树`
         : '收到一份专属圣诞惊喜 ✨';
     } else {
-      this.el.introKicker.textContent = '夜空星尘已为你就绪 ✨';
+      this.el.introKicker.textContent = '轻触点亮暗夜中的第一束星光 ✨';
     }
   }
 
@@ -436,7 +437,7 @@ export class ControlPanel {
     this.el.introOverlay.classList.add('ignited');
     this.introHideTimer = setTimeout(() => {
       this.el.introOverlay.hidden = true;
-    }, 620);
+    }, 450);
 
     this.app.ignite({
       onGreetingReveal: () => {

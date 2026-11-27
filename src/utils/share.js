@@ -85,7 +85,8 @@ export function encodeConfig(config) {
       Number(config.effects.bloomStrength ?? 0.32),
       config.effects.music ? 1 : 0,
       config.effects.rhythmLights ? 1 : 0,
-      config.effects.musicTrack ?? 'we-wish'
+      config.effects.musicTrack ?? 'we-wish',
+      config.effects.winterVillage ? 1 : 0
     ],
     g: [
       config.greeting.mainText ?? '',
@@ -166,6 +167,9 @@ export function decodeConfig(token) {
       }
       if (VALID_TRACKS.has(data.fx[10])) {
         base.effects.musicTrack = data.fx[10];
+      }
+      if (data.fx[11] !== undefined) {
+        base.effects.winterVillage = Boolean(data.fx[11]);
       }
     }
 

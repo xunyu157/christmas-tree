@@ -916,8 +916,8 @@ body.drawer-open .control-drawer {
   place-items: center;
   padding: 24px;
   cursor: pointer;
-  background: radial-gradient(circle at 50% 50%, rgba(243, 142, 194, 0.08), rgba(3, 5, 13, 0.36) 70%);
-  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  background: radial-gradient(circle at 50% 50%, rgba(255, 226, 184, 0.05), rgba(0, 0, 0, 0.96) 58%);
+  transition: opacity 0.42s ease, transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .intro-overlay.ignited {

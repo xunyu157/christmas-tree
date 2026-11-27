@@ -16,8 +16,8 @@ export const PRESETS = {
       ribbonColor: '#ffd463',   // 醒目流光香槟金丝带
       topperColor: '#ff5599',   // 树顶饱满玫瑰粉爱心
       vortexColor: '#9ec6f5',   // 底部星河雾蓝光晕
-      skyTop: '#03050d',        // 夜空顶部深蓝黑
-      skyBottom: '#0a1228'      // 夜空底部微蓝黑
+      skyTop: '#0b142a',        // 夜空顶部深靛蓝夜色
+      skyBottom: '#1c3058'      // 夜空底部清透星夜微蓝
     },
     textColor: '#ffdbe9',
     subTextColor: '#f5d794'
@@ -33,8 +33,8 @@ export const PRESETS = {
       ribbonColor: '#ffd24c',
       topperColor: '#ffd84d',
       vortexColor: '#8ce6c0',
-      skyTop: '#030807',
-      skyBottom: '#0a1e1a'
+      skyTop: '#08171a',
+      skyBottom: '#16353a'
     },
     textColor: '#e9fff3',
     subTextColor: '#ffd670'
@@ -50,8 +50,8 @@ export const PRESETS = {
       ribbonColor: '#ffe08a',
       topperColor: '#7be0ff',
       vortexColor: '#91c9ff',
-      skyTop: '#020612',
-      skyBottom: '#0a1b3a'
+      skyTop: '#091630',
+      skyBottom: '#1b3868'
     },
     textColor: '#e6f5ff',
     subTextColor: '#a9dcff'
@@ -67,8 +67,8 @@ export const PRESETS = {
       ribbonColor: '#ffea9f',
       topperColor: '#ff7096',
       vortexColor: '#ffdfa3',
-      skyTop: '#080503',
-      skyBottom: '#1c130a'
+      skyTop: '#141118',
+      skyBottom: '#2d2432'
     },
     textColor: '#fff2d1',
     subTextColor: '#ffd166'
@@ -84,8 +84,8 @@ export const PRESETS = {
       ribbonColor: '#6efce5',
       topperColor: '#df80ff',
       vortexColor: '#8ee8ff',
-      skyTop: '#050311',
-      skyBottom: '#170b36'
+      skyTop: '#100c28',
+      skyBottom: '#281e54'
     },
     textColor: '#efe2ff',
     subTextColor: '#80f7e5'
@@ -130,7 +130,8 @@ export function createDefaultConfig() {
       bloomStrength: 0.32,
       music: true,
       rhythmLights: true,
-      musicTrack: 'we-wish'
+      musicTrack: 'we-wish',
+      winterVillage: true
     },
     greeting: {
       mainText: '亲爱的你，天天开心',
