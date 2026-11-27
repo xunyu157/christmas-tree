@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>专属定制 3D 星空圣诞树 · Merry Christmas</title>
+    <meta
+      name="description"
+      content="自由定制你的 3D 发光碎钻粒子圣诞树：挑选配色、树顶造型、烟花飘雪特效与专属祝福语，一键分享给重要的人。"
+    />
+    <!-- 优雅的中英文手写与衬线字体（若离线或网络受限会自动平滑降级至本地楷体/花体） -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Great+Vibes&family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600&family=Zhi+Mang+Xing&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/styles/main.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 3D WebGL 圣诞树全屏画布 -->
+      <div id="canvas-container" aria-label="3D 发光粒子圣诞树"></div>
+
+      <!-- 树顶上方浪漫双行祝福文字 -->
+      <header id="greeting-overlay" class="font-calligraphy" aria-live="polite">
+        <h1 id="greeting-main">亲爱的你，天天开心</h1>
+        <p id="greeting-sub">Merry Christmas</p>
+        <p id="greeting-sender" hidden></p>
+      </header>
+
+      <!-- 轻提示（创作模式可见，礼物模式自动隐藏） -->
+      <div id="stage-hint" class="stage-hint">
+        拖动旋转 · 滚轮/双指缩放 · 点击夜空放烟花 🎆
+      </div>
+
+      <!-- 右上角 / 底部快捷操作浮钮 -->
+      <div id="floating-actions" class="floating-actions">
+        <button id="btn-toggle-drawer" class="pill-btn primary-pill" type="button">
+          <span class="btn-icon">✨</span>
+          <span class="btn-label">定制圣诞树</span>
+        </button>
+        <button id="btn-quick-snapshot" class="pill-btn" type="button" title="保存高清贺卡图片">
+          <span class="btn-icon">📸</span>
+          <span class="btn-label">存图</span>
+        </button>
+        <button id="btn-quick-share" class="pill-btn" type="button" title="复制专属分享链接">
+          <span class="btn-icon">🔗</span>
+          <span class="btn-label">分享</span>
+        </button>
+      </div>
+
+      <!-- 礼物观赏模式下的低调右下角入口 -->
+      <div id="gift-actions" class="gift-actions" hidden>
+        <button id="btn-gift-snapshot" class="pill-btn" type="button">
+          <span class="btn-icon">📸</span>
+          <span class="btn-label">保存贺卡</span>
+        </button>
+        <button id="btn-gift-remix" class="pill-btn primary-pill" type="button">
+          <span class="btn-icon">✨</span>
+          <span class="btn-label">我也做一棵</span>
+        </button>
+      </div>
+
+      <!-- 半透明毛玻璃客制化抽屉面板 -->
+      <aside id="control-drawer" class="control-drawer" aria-label="圣诞树客制化面板">
+        <div class="drawer-header">
+          <div class="drawer-title-group">
+            <span class="drawer-badge">DIY</span>
+            <h2>客制化圣诞树</h2>
+          </div>
+          <button id="btn-close-drawer" class="icon-btn" type="button" aria-label="收起面板">
+            ✕
+          </button>
+        </div>
+
+        <!-- 三大功能分页标签 -->
+        <nav class="drawer-tabs" role="tablist">
+          <button class="tab-btn active" data-tab="style" role="tab" aria-selected="true" type="button">
+            🎨 配色树顶
+          </button>
+          <button class="tab-btn" data-tab="effects" role="tab" aria-selected="false" type="button">
+            ✨ 特效氛围
+          </button>
+          <button class="tab-btn" data-tab="greeting" role="tab" aria-selected="false" type="button">
+            💌 祝福分享
+          </button>
+        </nav>
+
+        <div class="drawer-body">
+          <!-- 分页 1：配色与树顶 -->
+          <section class="tab-panel active" data-panel="style">
+            <div class="section-block">
+              <div class="section-label">精选主题色板</div>
+              <div id="preset-grid" class="preset-grid"></div>
+            </div>
+
+            <div class="section-block">
+              <div class="section-label">树顶发光造型</div>
+              <div id="topper-grid" class="chip-grid"></div>
+            </div>
+
+            <div class="section-block">
+              <div class="section-label">自定义微调颜色</div>
+              <div class="color-grid">
+                <label class="color-item">
+                  <span>树身主色</span>
+                  <input id="color-treePrimary" type="color" />
+                </label>
+                <label class="color-item">
+                  <span>碎钻高光</span>
+                  <input id="color-treeSecondary" type="color" />
+                </label>
+                <label class="color-item">
+                  <span>螺旋丝带</span>
+                  <input id="color-ribbonColor" type="color" />
+                </label>
+                <label class="color-item">
+                  <span>树顶光色</span>
+                  <input id="color-topperColor" type="color" />
+                </label>
+                <label class="color-item">
+                  <span>底部漩涡</span>
+                  <input id="color-vortexColor" type="color" />
+                </label>
+                <label class="color-item">
+                  <span>树芯深色</span>
+                  <input id="color-treeDeep" type="color" />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <!-- 分页 2：特效与氛围 -->
+          <section class="tab-panel" data-panel="effects">
+            <div class="section-block">
+              <div class="section-label">动态特效开关</div>
+              <div class="toggle-list">
+                <label class="toggle-row">
+                  <span class="toggle-info">
+                    <strong>🎆 绚丽粒子烟花</strong>
+                    <small>自动绽放，点击夜空也可手动放烟花</small>
+                  </span>
+                  <input id="fx-fireworks" type="checkbox" class="switch-input" />
+                </label>
+                <label class="toggle-row">
+                  <span class="toggle-info">
+                    <strong>🎗️ 金色星光丝带</strong>
+                    <small>盘旋树身的流动光带</small>
+                  </span>
+                  <input id="fx-ribbon" type="checkbox" class="switch-input" />
+                </label>
+                <label class="toggle-row">
+                  <span class="toggle-info">
+                    <strong>🌀 底部星河漩涡</strong>
+                    <small>涟漪扩散星尘与柔和月光雾晕</small>
+                  </span>
+                  <input id="fx-vortex" type="checkbox" class="switch-input" />
+                </label>
+                <label class="toggle-row">
+                  <span class="toggle-info">
+                    <strong>❄️ 漫天轻盈飘雪</strong>
+                    <small>冬夜温柔飘落的细雪</small>
+                  </span>
+                  <input id="fx-snow" type="checkbox" class="switch-input" />
+                </label>
+                <label class="toggle-row">
+                  <span class="toggle-info">
+                    <strong>🌌 夜空星芒闪烁</strong>
+                    <small>远景星辰与四角星芒</small>
+                  </span>
+                  <input id="fx-stars" type="checkbox" class="switch-input" />
+                </label>
+                <label class="toggle-row">
+                  <span class="toggle-info">
+                    <strong>🌟 梦幻辉光（Bloom）</strong>
+                    <small>碎钻与爱心的电影级霓虹光晕</small>
+                  </span>
+                  <input id="fx-bloom" type="checkbox" class="switch-input" />
+                </label>
+                <label class="toggle-row">
+                  <span class="toggle-info">
+                    <strong>🔄 圣诞树自动旋转</strong>
+                    <small>360° 缓缓展示立体光影</small>
+                  </span>
+                  <input id="fx-autoRotate" type="checkbox" class="switch-input" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section-block">
+              <div class="slider-header">
+                <span class="section-label">辉光柔和强度</span>
+                <span id="bloom-value" class="slider-value">0.72</span>
+              </div>
+              <input
+                id="fx-bloomStrength"
+                type="range"
+                min="0.2"
+                max="1.4"
+                step="0.04"
+                value="0.72"
+                class="range-slider"
+              />
+            </div>
+          </section>
+
+          <!-- 分页 3：祝福语与分享 -->
+          <section class="tab-panel" data-panel="greeting">
+            <div class="section-block">
+              <div class="section-label">专属祝福文字</div>
+              <div class="form-stack">
+                <label class="input-group">
+                  <span>中文主祝福（显示在最上方）</span>
+                  <input
+                    id="input-mainText"
+                    type="text"
+                    maxlength="40"
+                    placeholder="例如：小小陶，天天开心"
+                  />
+                </label>
+                <label class="input-group">
+                  <span>英文副标题（花体居中）</span>
+                  <input
+                    id="input-subText"
+                    type="text"
+                    maxlength="50"
+                    placeholder="例如：Merry Christmas"
+                  />
+                </label>
+                <label class="input-group">
+                  <span>落款署名（留空则不显示）</span>
+                  <input
+                    id="input-sender"
+                    type="text"
+                    maxlength="32"
+                    placeholder="例如：From 永远爱你的圣诞老人"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div class="section-block">
+              <div class="section-label">文字字体风格</div>
+              <div id="font-grid" class="chip-grid"></div>
+            </div>
+
+            <div class="section-block">
+              <div class="section-label">文字发光颜色</div>
+              <div class="color-grid two-col">
+                <label class="color-item">
+                  <span>主祝福色</span>
+                  <input id="color-textColor" type="color" />
+                </label>
+                <label class="color-item">
+                  <span>副标题色</span>
+                  <input id="color-subTextColor" type="color" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section-block share-box">
+              <div class="section-label">送给重要的人（零服务器直达）</div>
+              <p class="share-tip">
+                专属链接已把你的配色、特效与祝福全部编码在内。TA 点开链接将自动进入纯净无按钮的「礼物观赏模式」。
+              </p>
+              <div class="action-stack">
+                <button id="btn-copy-link" class="action-btn primary" type="button">
+                  🔗 复制专属分享链接
+                </button>
+                <div class="action-row">
+                  <button id="btn-show-qr" class="action-btn secondary" type="button">
+                    📱 生成二维码
+                  </button>
+                  <button id="btn-save-card" class="action-btn secondary" type="button">
+                    📸 保存高清贺卡
+                  </button>
+                </div>
+                <button id="btn-reset-default" class="action-btn ghost" type="button">
+                  ↺ 恢复默认示例同款
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <!-- 二维码分享弹窗 -->
+      <div id="qr-modal" class="modal-backdrop" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
+          <div class="modal-header">
+            <h3 id="qr-modal-title">扫码查看专属圣诞树</h3>
+            <button id="btn-close-qr" class="icon-btn" type="button" aria-label="关闭弹窗">✕</button>
+          </div>
+          <div class="qr-stage">
+            <canvas id="qr-canvas"></canvas>
+          </div>
+          <p class="modal-desc">
+            用手机微信或浏览器扫描二维码，即可全屏欣赏你定制的专属星空圣诞树与祝福 ✨
+          </p>
+          <div class="modal-actions">
+            <button id="btn-modal-copy" class="action-btn primary" type="button">
+              🔗 复制专属链接
+            </button>
+            <button id="btn-modal-preview-gift" class="action-btn secondary" type="button">
+              🎁 预览礼物模式
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 轻量 Toast 反馈提示 -->
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

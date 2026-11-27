@@ -1,0 +1,19 @@
+{
+  "name": "custom-christmas-tree",
+  "version": "1.0.0",
+  "private": true,
+  "description": "客制化 3D 发光碎钻粒子圣诞树（支持颜色、树顶、特效、双行祝福定制与零后端链接/二维码分享）",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}
