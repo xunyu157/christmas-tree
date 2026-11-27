@@ -75,7 +75,7 @@ export function encodeConfig(config) {
       config.effects.stars ? 1 : 0,
       config.effects.bloom ? 1 : 0,
       config.effects.autoRotate ? 1 : 0,
-      Number(config.effects.bloomStrength ?? 0.72)
+      Number(config.effects.bloomStrength ?? 0.32)
     ],
     g: [
       config.greeting.mainText ?? '',
@@ -146,7 +146,7 @@ export function decodeConfig(token) {
       });
       const strength = Number(data.fx[7]);
       if (!Number.isNaN(strength)) {
-        base.effects.bloomStrength = Math.min(1.5, Math.max(0.15, strength));
+        base.effects.bloomStrength = Math.min(0.85, Math.max(0.05, strength));
       }
     }
 

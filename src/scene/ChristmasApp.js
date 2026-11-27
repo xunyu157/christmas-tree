@@ -53,7 +53,7 @@ export class ChristmasApp {
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(width, height);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.06;
+    this.renderer.toneMappingExposure = 0.96;
     container.appendChild(this.renderer.domElement);
 
     // 交互轨道控制：支持鼠标/单指拖拽旋转 + 滚轮/双指缩放
@@ -104,11 +104,12 @@ export class ChristmasApp {
     this.composer.setSize(width, height);
 
     const renderPass = new RenderPass(this.scene, this.camera);
+    // 提高辉光阈值（0.82）并收紧扩散半径（0.28）：只让高光碎钻、树顶星芒与烟花泛起柔和光晕，彻底杜绝树身与夜空过曝泛白
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(width, height),
       initialConfig.effects.bloomStrength,
-      0.52,
-      0.16
+      0.28,
+      0.82
     );
     const outputPass = new OutputPass();
 
@@ -152,10 +153,10 @@ export class ChristmasApp {
     this.camera.updateProjectionMatrix();
 
     if (resetPosition) {
-      // 精准对齐示例图黄金比例：顶部留出双行祝福语空间，底部完整展现星河漩涡
-      const distance = aspect < 0.72 ? 26.8 : aspect < 1.0 ? 24.2 : 22.8;
-      const camY = aspect < 0.72 ? 3.9 : 3.4;
-      const targetY = aspect < 0.72 ? 2.05 : 1.95;
+      // 精准对齐示例图黄金比例：顶部留出双行祝福语呼吸空间，底部完整展现星河漩涡
+      const distance = aspect < 0.72 ? 27.2 : aspect < 1.0 ? 24.6 : 23.4;
+      const camY = aspect < 0.72 ? 4.0 : 3.6;
+      const targetY = aspect < 0.72 ? 2.15 : 2.15;
       this.camera.position.set(0, camY, distance);
       this.controls.target.set(0, targetY, 0);
       this.controls.update();
@@ -266,7 +267,7 @@ export class ChristmasApp {
 
     this.controls.update();
     this.tree.update(elapsed);
-    this.topper.update(elapsed);
+    this.topper.update(elapsed, this.camera);
     this.vortex.update(elapsed, delta);
     this.fireworks.update(delta);
     this.atmosphere.update(elapsed, delta);

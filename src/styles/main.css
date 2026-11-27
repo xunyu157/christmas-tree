@@ -26,6 +26,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body,
 #app {
@@ -66,7 +70,7 @@ body,
    ========================================================================== */
 #greeting-overlay {
   position: fixed;
-  top: clamp(3.8vh, 5.2vh, 7.2vh);
+  top: clamp(2.2vh, 3.6vh, 5.2vh);
   left: 50%;
   transform: translateX(-50%);
   width: min(92vw, 720px);
@@ -79,7 +83,7 @@ body,
 
 @media (max-width: 767px) {
   #greeting-overlay {
-    top: max(env(safe-area-inset-top, 12px) + 8.5vh, 10.5vh);
+    top: max(calc(env(safe-area-inset-top, 10px) + 58px), 9.5vh);
   }
 }
 
@@ -183,21 +187,14 @@ body.gift-mode .stage-hint {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.floating-actions {
   top: max(16px, env(safe-area-inset-top, 12px));
-  right: 16px;
-}
-
-.gift-actions {
-  bottom: max(18px, env(safe-area-inset-bottom, 16px));
   right: 16px;
 }
 
 .pill-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 38px;
   padding: 0 14px;
@@ -207,6 +204,8 @@ body.gift-mode .stage-hint {
   color: var(--fg);
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -286,16 +285,31 @@ body.drawer-open .control-drawer {
     transform: translateY(0);
   }
 
-  .floating-actions {
-    top: auto;
-    bottom: max(16px, env(safe-area-inset-bottom, 14px));
-    right: 50%;
-    transform: translateX(50%);
+  .floating-actions,
+  .gift-actions {
+    top: max(12px, env(safe-area-inset-top, 10px));
+    left: 12px;
+    right: 12px;
+    bottom: auto;
+    transform: none;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .pill-btn {
+    height: 34px;
+    padding: 0 11px;
+    font-size: 12.5px;
+  }
+
+  .drawer-body {
+    padding-bottom: 64px;
   }
 
   .stage-hint {
-    bottom: max(64px, env(safe-area-inset-bottom, 14px) + 48px);
+    bottom: max(68px, calc(env(safe-area-inset-bottom, 14px) + 56px));
     font-size: 11px;
+    padding: 5px 12px;
   }
 }
 

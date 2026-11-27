@@ -9,7 +9,7 @@
 
 import * as THREE from 'three';
 
-const TOPPER_Y = 6.92;
+const TOPPER_Y = 6.72;
 
 const TOPPER_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
@@ -24,11 +24,11 @@ const TOPPER_VERTEX_SHADER = /* glsl */ `
 
   void main() {
     vCore = aCore;
-    vTwinkle = 0.78 + 0.34 * sin(uTime * 3.2 + aPhase);
+    vTwinkle = 0.76 + 0.28 * sin(uTime * 3.2 + aPhase);
 
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * uPixelRatio * (190.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = aSize * uPixelRatio * (135.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
@@ -41,12 +41,12 @@ const TOPPER_FRAGMENT_SHADER = /* glsl */ `
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
     float dist = length(uv);
-    if (dist > 0.5) discard;
+    if (dist > 0.46) discard;
 
-    float alpha = pow(smoothstep(0.5, 0.02, dist), 1.8);
-    // 越靠近中心越偏暖白高光，外沿呈现璀璨主色
-    vec3 color = mix(uTopperColor, vec3(1.0, 0.96, 0.99), clamp(vCore * 0.85, 0.0, 1.0));
-    gl_FragColor = vec4(color * vTwinkle * 1.25, alpha);
+    float rim = smoothstep(0.46, 0.06, dist);
+    // 外沿保持浓郁饱满的粉色/主题色，仅正中心过渡为柔白星芯
+    vec3 color = mix(uTopperColor, vec3(1.0, 0.96, 0.99), pow(clamp(vCore, 0.0, 1.0), 1.8) * 0.82);
+    gl_FragColor = vec4(color * (0.55 + 0.58 * rim) * vTwinkle, 1.0);
   }
 `;
 
@@ -70,13 +70,13 @@ function buildHeartGeometry(count = 2400) {
       2 * Math.cos(3 * u) -
       Math.cos(4 * u);
 
-    // 45% 勾勒轮廓，55% 饱满填充内部
-    const fill = Math.random() < 0.45 ? 0.88 + 0.14 * Math.random() : Math.pow(Math.random(), 0.55);
+    // 62% 强化轮廓线条（让爱心双弧与尖角一眼清晰），38% 填充内部柔光核心
+    const fill = Math.random() < 0.62 ? 0.9 + 0.11 * Math.random() : Math.pow(Math.random(), 0.58);
     const x = rawX * scale * fill;
     const y = (rawY + 1.5) * scale * fill;
 
-    // 越靠近中心越饱满厚实，边缘自然收薄
-    const thickness = Math.sqrt(Math.max(0, 1 - fill * fill * 0.82)) * 0.34;
+    // 适度控制厚度，搭配正面朝向相机，任何旋转角度都是标准饱满爱心
+    const thickness = Math.sqrt(Math.max(0, 1 - fill * fill * 0.85)) * 0.22;
     const z = (Math.random() - 0.5) * 2 * thickness;
 
     positions[i * 3] = x;
@@ -218,9 +218,9 @@ export class TopperBuilder {
       uniforms: this.uniforms,
       vertexShader: TOPPER_VERTEX_SHADER,
       fragmentShader: TOPPER_FRAGMENT_SHADER,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
+      transparent: false,
+      depthTest: true,
+      depthWrite: true
     });
 
     this.geometries = {
@@ -233,18 +233,19 @@ export class TopperBuilder {
     this.pointsMesh = new THREE.Points(this.geometries[this.currentType], this.material);
     this.group.add(this.pointsMesh);
 
-    // 中心炽白星芒光斑（高度还原示例图中爱心正中央的强光星芒！）
+    // 中心精致星芒光斑（控制尺寸与透明度，既闪耀又不糊掉爱心轮廓）
     this.flareMat = new THREE.SpriteMaterial({
       map: sparkleTexture,
       color: new THREE.Color('#ffffff'),
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.76,
       blending: THREE.AdditiveBlending,
+      depthTest: false,
       depthWrite: false
     });
     this.coreFlare = new THREE.Sprite(this.flareMat);
-    this.coreFlare.scale.set(2.15, 2.15, 1);
-    this.coreFlare.position.set(0, 0.06, 0.02);
+    this.coreFlare.scale.set(1.55, 1.55, 1);
+    this.coreFlare.position.set(0, 0.06, 0.12);
     this.group.add(this.coreFlare);
 
     // 柔和外圈彩色光晕
@@ -252,13 +253,14 @@ export class TopperBuilder {
       map: sparkleTexture,
       color: new THREE.Color(topperColor),
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.28,
       blending: THREE.AdditiveBlending,
+      depthTest: false,
       depthWrite: false
     });
     this.haloSprite = new THREE.Sprite(this.haloMat);
-    this.haloSprite.scale.set(3.2, 3.2, 1);
-    this.haloSprite.position.set(0, 0.06, 0);
+    this.haloSprite.scale.set(2.35, 2.35, 1);
+    this.haloSprite.position.set(0, 0.06, 0.08);
     this.group.add(this.haloSprite);
   }
 
@@ -277,16 +279,17 @@ export class TopperBuilder {
     this.uniforms.uPixelRatio.value = ratio;
   }
 
-  update(elapsed) {
+  update(elapsed, camera = null) {
     this.uniforms.uTime.value = elapsed;
 
-    // 树顶装饰优雅轻盈漂浮 + 缓慢摇曳
+    // 树顶装饰优雅轻盈漂浮；始终正面朝向相机并带轻微摇曳，避免镜头转到侧面时爱心变成竖条椭圆！
     this.group.position.y = TOPPER_Y + Math.sin(elapsed * 1.6) * 0.06;
-    this.pointsMesh.rotation.y = Math.sin(elapsed * 0.7) * 0.28;
+    const camYaw = camera ? Math.atan2(camera.position.x, camera.position.z) : 0;
+    this.pointsMesh.rotation.y = camYaw + Math.sin(elapsed * 1.1) * 0.2;
 
     // 核心星芒呼吸脉动
-    const pulse = 1.0 + 0.1 * Math.sin(elapsed * 3.1);
-    this.coreFlare.scale.set(2.15 * pulse, 2.15 * pulse, 1);
-    this.haloSprite.scale.set(3.2 * pulse, 3.2 * pulse, 1);
+    const pulse = 1.0 + 0.09 * Math.sin(elapsed * 3.1);
+    this.coreFlare.scale.set(1.55 * pulse, 1.55 * pulse, 1);
+    this.haloSprite.scale.set(2.35 * pulse, 2.35 * pulse, 1);
   }
 }

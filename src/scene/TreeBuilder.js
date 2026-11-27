@@ -1,61 +1,72 @@
 /**
- * 3D 碎钻粒子圣诞树主体 + 螺旋星光丝带构建器
+ * 3D 碎钻粒子圣诞树主体 + 隐形深度遮挡核 + 细闪流光螺旋金带 + 璀璨星芒层
  * --------------------------------------------------
- * 采用自定义 GLSL 着色器渲染约 2.6 万颗闪烁碎钻粒子，
- * 颜色全部通过 GPU Uniform 实时切换，拖动取色器也能保持 60 帧丝滑流畅。
+ * 核心设计：
+ * 1. 平滑圆润松枝波浪：使用连续正弦波塑造 8 层自然松枝起伏与明暗阴影，无生硬阶梯断层；
+ * 2. 五色独立宝石颗粒：深紫暗影、紫粉主钻、暖香槟金钻、银白珍珠钻、冷调蓝紫星屑颗颗分明；
+ * 3. 纯圆滑圆锥螺旋金带 + 隐形树芯遮挡锥（colorWrite: false）：
+ *    金带沿纯平滑螺旋线盘旋，绝不凸起、绝不断裂；隐形遮挡锥挡住绕到树背面的丝带，同时保留树身通透星隙！
  */
 
 import * as THREE from 'three';
 
-const TREE_HEIGHT = 10.6;
+const TREE_HEIGHT = 10.5;
 const TREE_BASE_Y = -4.35;
 const TREE_BASE_RADIUS = 3.85;
 
 /**
- * 计算某个归一化高度 t ∈ [0, 1] 对应的树身基础半径
- * 带有自然的层叠枝叶波浪轮廓，而非生硬的几何圆锥
+ * 连续平滑的层叠松枝轮廓函数（无 floor 阶梯跳变）
+ * 返回：当前位置松枝最大半径 radius、基础圆锥包络 globalCone、以及层内受光系数 tierShade
  */
-function getConeRadius(t, angle) {
-  const envelope = Math.pow(1 - t, 0.92) * TREE_BASE_RADIUS + 0.07;
-  // 纵向层叠枝叶起伏
-  const tierWave = 1.0 + 0.13 * Math.sin(t * Math.PI * 13.0) * (1.0 - t * 0.42);
-  // 环向蓬松树枝分叉感
-  const branchCount = 8.0 - Math.floor(t * 3.0);
-  const branchWave = 1.0 + 0.1 * Math.cos(angle * branchCount + t * 16.0) * (1.0 - t * 0.3);
-  return envelope * tierWave * branchWave;
+function getSmoothTreeProfile(t, angle) {
+  const globalCone = Math.pow(1.0 - t, 0.91) * TREE_BASE_RADIUS + 0.06;
+
+  // 7.5 层平滑松枝起伏（波峰对应松枝外舒下沿，波谷对应层间内收凹槽）
+  const wavePhase = t * Math.PI * 2.0 * 7.5;
+  const tierWave = Math.sin(wavePhase);
+  const skirtFactor = 0.89 + 0.105 * tierWave * (1.0 - t * 0.28);
+
+  // 环向柔和分叉（幅度克制，确保不会刺穿外侧螺旋金带）
+  const frondCount = 7.0;
+  const frondWave = 1.0 + 0.055 * Math.cos(angle * frondCount + t * 14.0) * (1.0 - t * 0.35);
+
+  // 波峰处（松枝外翻下沿）明亮，波谷处（上一层树枝下方阴影）深邃压暗
+  const tierShade = 0.72 + 0.36 * (0.5 + 0.5 * tierWave);
+
+  return {
+    radius: globalCone * skirtFactor * frondWave,
+    globalCone,
+    tierShade
+  };
 }
 
 const TREE_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
   attribute float aPhase;
-  attribute float aTone;
-  attribute float aSparkle;
+  attribute float aRole;
+  attribute float aShade;
 
   uniform float uTime;
   uniform float uPixelRatio;
 
-  varying float vTone;
+  varying float vRole;
+  varying float vShade;
   varying float vTwinkle;
-  varying float vSparkle;
 
   void main() {
-    vTone = aTone;
-    vSparkle = aSparkle;
+    vRole = aRole;
+    vShade = aShade;
 
-    // 每颗碎钻粒子按各自相位轻盈闪烁，模拟细闪星钻质感
-    float speed = aSparkle > 0.5 ? 3.8 : 2.1;
+    float speed = aRole > 1.5 ? 3.1 : 1.9;
     float wave = 0.5 + 0.5 * sin(uTime * speed + aPhase);
-    vTwinkle = aSparkle > 0.5 ? mix(0.35, 1.35, pow(wave, 2.2)) : mix(0.62, 1.12, wave);
+    vTwinkle = aRole > 1.5 ? mix(0.68, 1.24, pow(wave, 1.6)) : mix(0.75, 1.08, wave);
 
-    // 树身极其轻微的呼吸起伏
     vec3 pos = position;
-    pos.y += sin(uTime * 0.9 + aPhase) * 0.018;
+    pos.y += sin(uTime * 0.85 + aPhase) * 0.014;
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-
-    float sizePulse = aSparkle > 0.5 ? (0.85 + 0.45 * wave) : 1.0;
-    gl_PointSize = aSize * sizePulse * uPixelRatio * (185.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = aSize * uPixelRatio * (92.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
@@ -63,38 +74,78 @@ const TREE_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uColorPrimary;
   uniform vec3 uColorSecondary;
   uniform vec3 uColorDeep;
+  uniform vec3 uRibbonColor;
 
-  varying float vTone;
+  varying float vRole;
+  varying float vShade;
   varying float vTwinkle;
-  varying float vSparkle;
+
+  void main() {
+    vec2 uv = gl_PointCoord - 0.5;
+    float dist = length(uv);
+    if (dist > 0.46) discard;
+
+    float rim = smoothstep(0.46, 0.05, dist);
+
+    vec3 baseColor;
+    if (vRole < 0.5) {
+      baseColor = uColorDeep;
+    } else if (vRole < 1.5) {
+      baseColor = uColorPrimary;
+    } else if (vRole < 2.5) {
+      baseColor = mix(uRibbonColor, vec3(1.0, 0.92, 0.68), 0.25);
+    } else if (vRole < 3.5) {
+      baseColor = mix(uColorSecondary, vec3(0.98, 0.99, 1.0), 0.5);
+    } else {
+      baseColor = mix(uColorPrimary, vec3(0.56, 0.68, 0.98), 0.58);
+    }
+
+    vec3 litColor = baseColor * (0.42 + 0.68 * rim) * vShade * vTwinkle;
+    gl_FragColor = vec4(litColor, 1.0);
+  }
+`;
+
+const SPARKLE_VERTEX_SHADER = /* glsl */ `
+  attribute float aSize;
+  attribute float aPhase;
+  attribute float aGoldMix;
+
+  uniform float uTime;
+  uniform float uPixelRatio;
+
+  varying float vFlash;
+  varying float vGoldMix;
+
+  void main() {
+    vGoldMix = aGoldMix;
+    float wave = 0.5 + 0.5 * sin(uTime * 3.4 + aPhase);
+    vFlash = mix(0.22, 1.32, pow(wave, 2.4));
+
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    gl_PointSize = aSize * (0.76 + 0.38 * wave) * uPixelRatio * (150.0 / max(-mvPosition.z, 1.0));
+  }
+`;
+
+const SPARKLE_FRAGMENT_SHADER = /* glsl */ `
+  uniform vec3 uColorSecondary;
+  uniform vec3 uRibbonColor;
+  varying float vFlash;
+  varying float vGoldMix;
 
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
     float dist = length(uv);
     if (dist > 0.5) discard;
 
-    // 普通粒子：柔和圆光斑；高亮碎钻：自带精致十字星芒
-    float softDot = smoothstep(0.5, 0.04, dist);
-    float alpha = pow(softDot, 1.85);
+    float crossH = exp(-abs(uv.y) * 26.0) * exp(-abs(uv.x) * 4.6);
+    float crossV = exp(-abs(uv.x) * 26.0) * exp(-abs(uv.y) * 4.6);
+    float core = exp(-dist * 11.0);
+    float alpha = clamp(core + (crossH + crossV) * 0.8, 0.0, 1.0);
 
-    if (vSparkle > 0.5) {
-      float crossH = exp(-abs(uv.y) * 26.0) * exp(-abs(uv.x) * 4.5);
-      float crossV = exp(-abs(uv.x) * 26.0) * exp(-abs(uv.y) * 4.5);
-      float core = exp(-dist * 10.0);
-      alpha = clamp(core + (crossH + crossV) * 0.72, 0.0, 1.0);
-    }
-
-    // 按颗粒层次在 深色树芯 -> 主题主色 -> 香槟珍珠高光 之间平滑过渡
-    vec3 color;
-    if (vTone < 0.42) {
-      color = mix(uColorDeep, uColorPrimary, vTone / 0.42);
-    } else if (vTone < 0.86) {
-      color = mix(uColorPrimary, uColorSecondary, (vTone - 0.42) / 0.44);
-    } else {
-      color = mix(uColorSecondary, vec3(1.0, 0.99, 1.0), (vTone - 0.86) / 0.14);
-    }
-
-    gl_FragColor = vec4(color * vTwinkle, alpha * 0.92);
+    vec3 tint = mix(uColorSecondary, uRibbonColor, vGoldMix);
+    vec3 color = mix(tint, vec3(1.0, 0.99, 1.0), 0.45);
+    gl_FragColor = vec4(color * vFlash, alpha * 0.68);
   }
 `;
 
@@ -102,64 +153,104 @@ const RIBBON_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
   attribute float aPhase;
   attribute float aHeight;
+  attribute float aCenter;
 
   uniform float uTime;
   uniform float uPixelRatio;
 
   varying float vGlow;
+  varying float vCenter;
 
   void main() {
-    // 金色螺旋丝带上的流动光波（自下而上缓缓流淌）
-    float flow = 0.5 + 0.5 * sin(aHeight * 22.0 - uTime * 2.6 + aPhase * 0.3);
-    float twinkle = 0.72 + 0.38 * sin(uTime * 3.4 + aPhase);
-    vGlow = mix(0.75, 1.4, flow) * twinkle;
+    vCenter = aCenter;
+    float flow = 0.5 + 0.5 * sin(aHeight * 24.0 - uTime * 2.4 + aPhase * 0.3);
+    float twinkle = 0.72 + 0.34 * sin(uTime * 3.8 + aPhase);
+    vGlow = mix(0.8, 1.24, flow) * twinkle;
 
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * (0.9 + 0.22 * flow) * uPixelRatio * (195.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = aSize * (0.9 + 0.18 * flow) * uPixelRatio * (90.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
 const RIBBON_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uRibbonColor;
   varying float vGlow;
+  varying float vCenter;
 
   void main() {
     vec2 uv = gl_PointCoord - 0.5;
     float dist = length(uv);
     if (dist > 0.5) discard;
 
-    float core = pow(smoothstep(0.5, 0.02, dist), 1.9);
-    vec3 color = mix(uRibbonColor, vec3(1.0, 0.98, 0.9), smoothstep(0.28, 0.0, dist) * 0.65);
-    gl_FragColor = vec4(color * vGlow, core * 0.95);
+    // 柔羽化星尘颗粒：中心璀璨香槟金、两侧如细碎金粉般自然散开，告别生硬黄绳感
+    float soft = pow(smoothstep(0.5, 0.04, dist), 1.85);
+    vec3 goldCore = mix(uRibbonColor, vec3(1.0, 0.98, 0.88), vCenter * 0.55);
+    float alpha = soft * (0.34 + 0.54 * vCenter);
+    gl_FragColor = vec4(goldCore * vGlow, alpha);
   }
 `;
 
 export class TreeBuilder {
   constructor(colors, isMobile = false) {
     this.group = new THREE.Group();
-    this.particleCount = isMobile ? 19000 : 27000;
-    this.ribbonCount = isMobile ? 3200 : 4400;
+    this.particleCount = isMobile ? 14000 : 19000;
+    this.sparkleCount = isMobile ? 1300 : 1900;
+    this.ribbonCount = isMobile ? 5200 : 7600;
+
+    const pr = Math.min(window.devicePixelRatio || 1, 2);
 
     this.treeUniforms = {
       uTime: { value: 0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      uPixelRatio: { value: pr },
       uColorPrimary: { value: new THREE.Color(colors.treePrimary) },
       uColorSecondary: { value: new THREE.Color(colors.treeSecondary) },
-      uColorDeep: { value: new THREE.Color(colors.treeDeep) }
+      uColorDeep: { value: new THREE.Color(colors.treeDeep) },
+      uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
+    };
+
+    this.sparkleUniforms = {
+      uTime: { value: 0 },
+      uPixelRatio: { value: pr },
+      uColorSecondary: { value: new THREE.Color(colors.treeSecondary) },
+      uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
     };
 
     this.ribbonUniforms = {
       uTime: { value: 0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      uPixelRatio: { value: pr },
       uRibbonColor: { value: new THREE.Color(colors.ribbonColor) }
     };
 
     this.treeMesh = this._buildTreeParticles();
+    this.treeMesh.renderOrder = 1;
+
+    // 隐形树芯深度遮挡锥：不画任何颜色（保留树身星隙通透感），只写入深度缓冲挡住树背面的螺旋丝带！
+    this.depthCone = this._buildDepthOccluderCone();
+    this.depthCone.renderOrder = 2;
+
     this.ribbonMesh = this._buildRibbonParticles();
+    this.ribbonMesh.renderOrder = 3;
+
+    this.sparkleMesh = this._buildSparkleParticles();
+    this.sparkleMesh.renderOrder = 4;
 
     this.group.add(this.treeMesh);
+    this.group.add(this.depthCone);
     this.group.add(this.ribbonMesh);
+    this.group.add(this.sparkleMesh);
+  }
+
+  _buildDepthOccluderCone() {
+    const geo = new THREE.ConeGeometry(TREE_BASE_RADIUS * 0.86, TREE_HEIGHT * 0.98, 40, 1, false);
+    const mat = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthWrite: true,
+      depthTest: true
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = TREE_BASE_Y + TREE_HEIGHT * 0.49;
+    return mesh;
   }
 
   _buildTreeParticles() {
@@ -167,42 +258,46 @@ export class TreeBuilder {
     const positions = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
     const phases = new Float32Array(count);
-    const tones = new Float32Array(count);
-    const sparkles = new Float32Array(count);
+    const roles = new Float32Array(count);
+    const shades = new Float32Array(count);
 
     for (let i = 0; i < count; i += 1) {
-      // 偏向底部均匀铺满表面积，同时保证树尖致密清晰
       const u = Math.random();
-      const t = 1.0 - Math.pow(u, 0.58);
+      const t = 1.0 - Math.pow(u, 0.57);
       const angle = Math.random() * Math.PI * 2;
-      const maxR = getConeRadius(t, angle);
+      const { radius: maxR, tierShade } = getSmoothTreeProfile(t, angle);
 
-      // 72% 分布在表面形成晶莹轮廓，28% 填充内部增强厚实立体感
-      const isOuter = Math.random() < 0.72;
+      const isOuter = Math.random() < 0.7;
       const rFactor = isOuter
-        ? 0.72 + 0.28 * Math.pow(Math.random(), 0.45)
-        : 0.16 + 0.56 * Math.random();
+        ? 0.76 + 0.24 * Math.pow(Math.random(), 0.48)
+        : 0.22 + 0.54 * Math.random();
 
       const r = maxR * rFactor;
-      const y = TREE_BASE_Y + t * TREE_HEIGHT + (Math.random() - 0.5) * 0.16;
+      const y = TREE_BASE_Y + t * TREE_HEIGHT + (Math.random() - 0.5) * 0.12;
 
       positions[i * 3] = Math.cos(angle) * r;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
 
-      // 约 6.5% 为大型十字闪钻高光颗粒
-      const isSparkle = isOuter && Math.random() < 0.065;
-      sparkles[i] = isSparkle ? 1.0 : 0.0;
+      const shellLight = isOuter ? 0.8 + 0.28 * rFactor : 0.32 + 0.35 * rFactor;
+      shades[i] = Math.max(0.2, tierShade * shellLight);
 
-      if (isSparkle) {
-        sizes[i] = 1.45 + Math.random() * 1.45;
-        tones[i] = 0.82 + Math.random() * 0.18;
-      } else if (isOuter) {
-        sizes[i] = 0.42 + Math.random() * 0.72;
-        tones[i] = 0.36 + Math.random() * 0.58;
+      const pick = Math.random();
+      if (!isOuter || tierShade < 0.82) {
+        roles[i] = pick < 0.65 ? 0.0 : 1.0;
+        sizes[i] = 0.42 + Math.random() * 0.45;
+      } else if (pick < 0.42) {
+        roles[i] = 1.0;
+        sizes[i] = 0.44 + Math.random() * 0.56;
+      } else if (pick < 0.66) {
+        roles[i] = 2.0;
+        sizes[i] = 0.48 + Math.random() * 0.62;
+      } else if (pick < 0.86) {
+        roles[i] = 3.0;
+        sizes[i] = 0.42 + Math.random() * 0.54;
       } else {
-        sizes[i] = 0.45 + Math.random() * 0.58;
-        tones[i] = Math.random() * 0.42;
+        roles[i] = 4.0;
+        sizes[i] = 0.44 + Math.random() * 0.52;
       }
 
       phases[i] = Math.random() * Math.PI * 2;
@@ -212,14 +307,57 @@ export class TreeBuilder {
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
-    geometry.setAttribute('aTone', new THREE.BufferAttribute(tones, 1));
-    geometry.setAttribute('aSparkle', new THREE.BufferAttribute(sparkles, 1));
+    geometry.setAttribute('aRole', new THREE.BufferAttribute(roles, 1));
+    geometry.setAttribute('aShade', new THREE.BufferAttribute(shades, 1));
 
     const material = new THREE.ShaderMaterial({
       uniforms: this.treeUniforms,
       vertexShader: TREE_VERTEX_SHADER,
       fragmentShader: TREE_FRAGMENT_SHADER,
+      transparent: false,
+      depthTest: true,
+      depthWrite: true
+    });
+
+    return new THREE.Points(geometry, material);
+  }
+
+  _buildSparkleParticles() {
+    const count = this.sparkleCount;
+    const positions = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    const phases = new Float32Array(count);
+    const goldMixes = new Float32Array(count);
+
+    for (let i = 0; i < count; i += 1) {
+      const t = 1.0 - Math.pow(Math.random(), 0.6);
+      const angle = Math.random() * Math.PI * 2;
+      const { radius: maxR } = getSmoothTreeProfile(t, angle);
+      const r = maxR * (0.96 + Math.random() * 0.07) + 0.05;
+      const y = TREE_BASE_Y + t * TREE_HEIGHT + (Math.random() - 0.5) * 0.1;
+
+      positions[i * 3] = Math.cos(angle) * r;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = Math.sin(angle) * r;
+
+      const isHeroStar = Math.random() < 0.07;
+      sizes[i] = isHeroStar ? 2.0 + Math.random() * 1.05 : 0.95 + Math.random() * 1.0;
+      phases[i] = Math.random() * Math.PI * 2;
+      goldMixes[i] = Math.random() < 0.48 ? 0.85 : 0.1;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+    geometry.setAttribute('aGoldMix', new THREE.BufferAttribute(goldMixes, 1));
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: this.sparkleUniforms,
+      vertexShader: SPARKLE_VERTEX_SHADER,
+      fragmentShader: SPARKLE_FRAGMENT_SHADER,
       transparent: true,
+      depthTest: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
@@ -233,26 +371,37 @@ export class TreeBuilder {
     const sizes = new Float32Array(count);
     const phases = new Float32Array(count);
     const heights = new Float32Array(count);
+    const centers = new Float32Array(count);
 
-    const turns = 5.6;
+    // 4.6 圈纯圆滑圆锥螺旋线：无任何阶梯函数、无分叉扰动，线条 100% 顺滑优雅！
+    const turns = 4.6;
 
     for (let i = 0; i < count; i += 1) {
-      const t = 0.03 + Math.random() * 0.94;
-      const baseAngle = t * Math.PI * 2 * turns;
-      // 丝带宽度随高度自然收细
-      const bandWidth = (0.16 + 0.14 * (1 - t)) * (Math.random() - 0.5);
-      const radialJitter = (Math.random() - 0.5) * 0.14;
-      const baseR = Math.pow(1 - t, 0.92) * TREE_BASE_RADIUS + 0.16;
-      const r = baseR * 1.07 + radialJitter;
+      // 按弧长近似采样（底部周长更长分配更多星尘，确保从底到顶密度均匀不断裂）
+      const u = Math.random();
+      const t = 0.04 + (1.0 - Math.pow(u, 0.68)) * 0.92;
 
-      const angle = baseAngle + (Math.random() - 0.5) * 0.11;
-      const y = TREE_BASE_Y + t * TREE_HEIGHT + bandWidth;
+      const baseAngle = t * Math.PI * 2.0 * turns;
+      const angle = baseAngle + (Math.random() - 0.5) * 0.07;
+
+      // 丝带横截面呈柔和星尘带分布：中轴密集闪亮，边缘轻柔弥散
+      const spread = (Math.random() + Math.random() + Math.random()) / 1.5 - 1.0;
+      const halfWidth = (0.22 - 0.1 * t);
+      const bandOffset = spread * halfWidth;
+
+      // 纯平滑圆锥包络半径（略大于树枝最外端 1.045，正面全程连贯不被截断，绝无突然凸起！）
+      const smoothCone = Math.pow(1.0 - t, 0.91) * TREE_BASE_RADIUS + 0.06;
+      const radialScatter = (Math.random() - 0.5) * 0.09;
+      const r = smoothCone * 1.06 + 0.05 + radialScatter;
+      const y = TREE_BASE_Y + t * TREE_HEIGHT + bandOffset;
 
       positions[i * 3] = Math.cos(angle) * r;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = Math.sin(angle) * r;
 
-      sizes[i] = 0.55 + Math.random() * 0.85;
+      const centerFactor = Math.max(0, 1.0 - Math.abs(spread));
+      centers[i] = centerFactor;
+      sizes[i] = 0.34 + centerFactor * 0.42 + Math.random() * 0.32;
       phases[i] = Math.random() * Math.PI * 2;
       heights[i] = t;
     }
@@ -262,14 +411,16 @@ export class TreeBuilder {
     geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
     geometry.setAttribute('aHeight', new THREE.BufferAttribute(heights, 1));
+    geometry.setAttribute('aCenter', new THREE.BufferAttribute(centers, 1));
 
     const material = new THREE.ShaderMaterial({
       uniforms: this.ribbonUniforms,
       vertexShader: RIBBON_VERTEX_SHADER,
       fragmentShader: RIBBON_FRAGMENT_SHADER,
       transparent: true,
+      depthTest: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending
+      blending: THREE.NormalBlending
     });
 
     return new THREE.Points(geometry, material);
@@ -279,6 +430,9 @@ export class TreeBuilder {
     this.treeUniforms.uColorPrimary.value.set(colors.treePrimary);
     this.treeUniforms.uColorSecondary.value.set(colors.treeSecondary);
     this.treeUniforms.uColorDeep.value.set(colors.treeDeep);
+    this.treeUniforms.uRibbonColor.value.set(colors.ribbonColor);
+    this.sparkleUniforms.uColorSecondary.value.set(colors.treeSecondary);
+    this.sparkleUniforms.uRibbonColor.value.set(colors.ribbonColor);
     this.ribbonUniforms.uRibbonColor.value.set(colors.ribbonColor);
   }
 
@@ -288,11 +442,13 @@ export class TreeBuilder {
 
   setPixelRatio(ratio) {
     this.treeUniforms.uPixelRatio.value = ratio;
+    this.sparkleUniforms.uPixelRatio.value = ratio;
     this.ribbonUniforms.uPixelRatio.value = ratio;
   }
 
   update(elapsed) {
     this.treeUniforms.uTime.value = elapsed;
+    this.sparkleUniforms.uTime.value = elapsed;
     this.ribbonUniforms.uTime.value = elapsed;
   }
 }

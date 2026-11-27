@@ -10,12 +10,12 @@ export const PRESETS = {
     name: '粉紫碎钻金',
     tag: '示例同款',
     colors: {
-      treePrimary: '#d889b8',   // 树身浪漫粉紫
-      treeSecondary: '#fff0d6', // 碎钻香槟高光
-      treeDeep: '#5b375e',      // 树身内部深莓紫（增强立体层次）
-      ribbonColor: '#ffd97d',   // 螺旋星光金带
-      topperColor: '#ff6ba9',   // 树顶发光爱心粉
-      vortexColor: '#a6ccf5',   // 底部星河雾蓝光晕
+      treePrimary: '#cf6aa6',   // 树身浓郁紫粉主钻
+      treeSecondary: '#fff3db', // 璀璨香槟银白碎钻
+      treeDeep: '#24102c',      // 松枝层下深邃暗莓紫阴影（拉开立体层次）
+      ribbonColor: '#ffd463',   // 醒目流光香槟金丝带
+      topperColor: '#ff5599',   // 树顶饱满玫瑰粉爱心
+      vortexColor: '#9ec6f5',   // 底部星河雾蓝光晕
       skyTop: '#03050d',        // 夜空顶部深蓝黑
       skyBottom: '#0a1228'      // 夜空底部微蓝黑
     },
@@ -27,11 +27,11 @@ export const PRESETS = {
     name: '经典祖母绿金',
     tag: '高定经典',
     colors: {
-      treePrimary: '#24a869',
-      treeSecondary: '#ffe8a3',
-      treeDeep: '#0c452b',
-      ribbonColor: '#ffd059',
-      topperColor: '#ffe066',
+      treePrimary: '#1ca664',
+      treeSecondary: '#fff0b8',
+      treeDeep: '#062617',
+      ribbonColor: '#ffd24c',
+      topperColor: '#ffd84d',
       vortexColor: '#8ce6c0',
       skyTop: '#030807',
       skyBottom: '#0a1e1a'
@@ -44,11 +44,11 @@ export const PRESETS = {
     name: '冰雪星河蓝',
     tag: '冬日冰晶',
     colors: {
-      treePrimary: '#5ab6ff',
-      treeSecondary: '#f0f9ff',
-      treeDeep: '#1a4275',
-      ribbonColor: '#c4ecff',
-      topperColor: '#8ae2ff',
+      treePrimary: '#4aa8ff',
+      treeSecondary: '#f2faff',
+      treeDeep: '#0b2142',
+      ribbonColor: '#ffe08a',
+      topperColor: '#7be0ff',
       vortexColor: '#91c9ff',
       skyTop: '#020612',
       skyBottom: '#0a1b3a'
@@ -61,11 +61,11 @@ export const PRESETS = {
     name: '香槟鎏金夜',
     tag: '温暖奢华',
     colors: {
-      treePrimary: '#e5b55e',
-      treeSecondary: '#fff8e3',
-      treeDeep: '#6b4618',
-      ribbonColor: '#fff0b5',
-      topperColor: '#ffe073',
+      treePrimary: '#df9f42',
+      treeSecondary: '#fff9e8',
+      treeDeep: '#2e1a06',
+      ribbonColor: '#ffea9f',
+      topperColor: '#ff7096',
       vortexColor: '#ffdfa3',
       skyTop: '#080503',
       skyBottom: '#1c130a'
@@ -78,11 +78,11 @@ export const PRESETS = {
     name: '极光幻梦紫',
     tag: '赛博梦幻',
     colors: {
-      treePrimary: '#9e73ff',
-      treeSecondary: '#abfff0',
-      treeDeep: '#351b6e',
-      ribbonColor: '#73ffea',
-      topperColor: '#d991ff',
+      treePrimary: '#8c5bff',
+      treeSecondary: '#ccfff6',
+      treeDeep: '#160936',
+      ribbonColor: '#6efce5',
+      topperColor: '#df80ff',
       vortexColor: '#8ee8ff',
       skyTop: '#050311',
       skyBottom: '#170b36'
@@ -121,7 +121,7 @@ export function createDefaultConfig() {
       stars: true,
       bloom: true,
       autoRotate: true,
-      bloomStrength: 0.72
+      bloomStrength: 0.32
     },
     greeting: {
       mainText: '亲爱的你，天天开心',

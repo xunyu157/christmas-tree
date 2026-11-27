@@ -32,7 +32,7 @@ const VORTEX_VERTEX_SHADER = /* glsl */ `
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = aSize * uPixelRatio * (185.0 / max(-mvPosition.z, 1.0));
+    gl_PointSize = aSize * uPixelRatio * (122.0 / max(-mvPosition.z, 1.0));
   }
 `;
 
@@ -49,10 +49,10 @@ const VORTEX_FRAGMENT_SHADER = /* glsl */ `
     float dist = length(uv);
     if (dist > 0.5) discard;
 
-    float alpha = pow(smoothstep(0.5, 0.04, dist), 1.9);
-    vec3 base = mix(uVortexColor, vec3(0.96, 0.98, 1.0), 0.52);
+    float alpha = pow(smoothstep(0.5, 0.05, dist), 2.1);
+    vec3 base = mix(uVortexColor, vec3(0.92, 0.96, 1.0), 0.38);
     vec3 color = mix(base, uGoldColor, vGold);
-    gl_FragColor = vec4(color * vTwinkle, alpha * (0.38 + 0.55 * vEdgeFade));
+    gl_FragColor = vec4(color * vTwinkle * 0.85, alpha * (0.14 + 0.24 * vEdgeFade));
   }
 `;
 
@@ -69,7 +69,7 @@ export class GroundVortex {
       map: mistTexture,
       color: new THREE.Color(colors.vortexColor),
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.3,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
